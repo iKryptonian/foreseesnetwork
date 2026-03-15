@@ -121,8 +121,8 @@ jobs:
       - name: Update image tags in K8s manifests
         run: |
           SHORT_SHA=${{ steps.vars.outputs.SHA }}
-          sed -i "s|livechat-server:latest|${{ env.IMAGE_SERVER }}:${SHORT_SHA}|g" k8s/server-deployment.yaml
-          sed -i "s|livechat-client:latest|${{ env.IMAGE_CLIENT }}:${SHORT_SHA}|g" k8s/client-deployment.yaml
+          sed -i "s|livechat-server:latest|${{ env.IMAGE_SERVER }}:${SHORT_SHA}|g" k8s/server.yml
+          sed -i "s|livechat-client:latest|${{ env.IMAGE_CLIENT }}:${SHORT_SHA}|g" k8s/client.yml
 
       - name: Apply Kubernetes manifests
         run: |
