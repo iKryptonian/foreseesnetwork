@@ -1,0 +1,87 @@
+/* ── Reset ── */
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  height: 100%;
+  width: 100%;
+  overflow-x: hidden;
+}
+
+#root {
+  min-height: 100%;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Auth page wrapper (used by Login & Register) ── */
+.auth-page {
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #f41b1b 0%, #090df5 100%);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  padding: 20px;
+}
+
+/* ── Card ── */
+.auth-card {
+  background: #fff;
+  border-radius: 20px;
+  padding: 44px 40px;
+  width: 100%;
+  max-width: 420px;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.18);
+}
+
+/* ── Large screens (>= 1024px) ── */
+@media (min-width: 1024px) {
+  .auth-card {
+    max-width: 440px;
+    padding: 48px 44px;
+  }
+}
+
+/* ── Tablets (600px – 1023px) ── */
+@media (min-width: 600px) and (max-width: 1023px) {
+  .auth-card {
+    max-width: 400px;
+    padding: 40px 36px;
+  }
+}
+
+/* ── Mobile (< 600px) ── */
+@media (max-width: 599px) {
+  .auth-page {
+    align-items: flex-start;
+    padding: 24px 16px;
+    min-height: 100dvh;
+  }
+
+  .auth-card {
+    max-width: 100%;
+    padding: 32px 24px;
+    border-radius: 16px;
+    margin-top: auto;
+    margin-bottom: auto;
+  }
+}
+
+/* ── Very small screens (< 360px) ── */
+@media (max-width: 359px) {
+  .auth-card {
+    padding: 24px 16px;
+    border-radius: 12px;
+  }
+}

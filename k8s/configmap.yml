@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fn-config
+  namespace: foreseesnetwork
+data:
+  DB_HOST: "postgres-service"
+  DB_PORT: "5432"
+  DB_NAME: "foreseesnetwork"
+  DB_USER: "postgres"
+  REDIS_HOST: "redis-service"
+  REDIS_PORT: "6379"
+  PORT: "4000"
+  TZ: "Asia/Kolkata"
+  PGTZ: "Asia/Kolkata"

@@ -1,0 +1,82 @@
+version: "3.8"
+
+services:
+  # ── PostgreSQL Database ──
+  postgres:
+    image: postgres:15-alpine
+    container_name: fn_postgres
+    restart: always
+    environment:
+      POSTGRES_DB: foreseesnetwork
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      PGTZ: Asia/Kolkata
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./server/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ──
+  redis:
+    image: redis:7-alpine
+    container_name: fn_redis
+    restart: always
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── Node.js Server ──
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: fn_server
+    restart: always
+    ports:
+      - "4000:4000"
+    environment:
+      PORT: 4000
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: foreseesnetwork
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      TZ: Asia/Kolkata
+      PGTZ: Asia/Kolkata
+      EMAIL_USER: foreseesnetwork@gmail.com
+      EMAIL_PASS: aoivchjwxrbwmjxv
+      LOCALSTACK_URL: "http://host.docker.internal:4566"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ── React Frontend ──
+  client:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=http://localhost:4000
+    container_name: fn_client
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - server
+
+volumes:
+  postgres_data:

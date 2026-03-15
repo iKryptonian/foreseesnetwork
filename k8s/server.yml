@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: server
+  namespace: foreseesnetwork
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: server
+  template:
+    metadata:
+      labels:
+        app: server
+    spec:
+      containers:
+        - name: server
+          image: livechat-server:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 4000
+          envFrom:
+            - configMapRef:
+                name: fn-config
+          env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: fn-secrets
+                  key: DB_PASSWORD
+            - name: EMAIL_USER
+              valueFrom:
+                secretKeyRef:
+                  name: fn-secrets
+                  key: EMAIL_USER
+            - name: EMAIL_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: fn-secrets
+                  key: EMAIL_PASS
+          readinessProbe:
+            httpGet:
+              path: /api/users
+              port: 4000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: server-service
+  namespace: foreseesnetwork
+spec:
+  selector:
+    app: server
+  ports:
+    - port: 4000
+      targetPort: 4000
