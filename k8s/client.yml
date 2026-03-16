@@ -15,8 +15,8 @@ spec:
     spec:
       containers:
         - name: client
-          image: livechat-client:latest
-          imagePullPolicy: Never
+          image: ghcr.io/ikryptonian/livechat-client:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 80
 
