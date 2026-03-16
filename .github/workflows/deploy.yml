@@ -8,8 +8,8 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_SERVER: ghcr.io/${{ github.repository_owner }}/livechat-server
-  IMAGE_CLIENT: ghcr.io/${{ github.repository_owner }}/livechat-client
+  IMAGE_SERVER: ghcr.io/ikryptonian/livechat-server
+  IMAGE_CLIENT: ghcr.io/ikryptonian/livechat-client
 
 jobs:
   # ─────────────────────────────────────────
