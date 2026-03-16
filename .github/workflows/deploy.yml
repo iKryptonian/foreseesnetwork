@@ -17,7 +17,7 @@ jobs:
   # ─────────────────────────────────────────
   build:
     name: Build & Push Docker Images
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     permissions:
       contents: read
       packages: write
@@ -81,9 +81,11 @@ jobs:
   # ─────────────────────────────────────────
   deploy:
     name: Deploy to Kubernetes
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: build
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    env:
+      KUBECONFIG: /Users/nivashp/.kube/config
 
     steps:
       - name: Checkout code
@@ -91,8 +93,8 @@ jobs:
 
       - name: Configure kubeconfig
         run: |
-          mkdir -p $HOME/.kube
-          cat > $HOME/.kube/config << 'EOF'
+          mkdir -p /Users/nivashp/.kube
+          cat > /Users/nivashp/.kube/config << 'EOF'
           apiVersion: v1
           clusters:
           - cluster:
@@ -112,7 +114,7 @@ jobs:
               client-certificate-data: ${{ secrets.MINIKUBE_CLIENT_CRT }}
               client-key-data: ${{ secrets.MINIKUBE_CLIENT_KEY }}
           EOF
-          chmod 600 $HOME/.kube/config
+          chmod 600 /Users/nivashp/.kube/config
 
       - name: Set image tag (short SHA)
         id: vars
@@ -121,12 +123,11 @@ jobs:
       - name: Update image tags in K8s manifests
         run: |
           SHORT_SHA=${{ steps.vars.outputs.SHA }}
-          sed -i "s|livechat-server:latest|${{ env.IMAGE_SERVER }}:${SHORT_SHA}|g" k8s/server.yml
-          sed -i "s|livechat-client:latest|${{ env.IMAGE_CLIENT }}:${SHORT_SHA}|g" k8s/client.yml
+          sed -i "" "s|livechat-server:latest|${{ env.IMAGE_SERVER }}:${SHORT_SHA}|g" k8s/server.yml
+          sed -i "" "s|livechat-client:latest|${{ env.IMAGE_CLIENT }}:${SHORT_SHA}|g" k8s/client.yml
 
       - name: Apply Kubernetes manifests
-        run: |
-          kubectl apply -f k8s/ --namespace=foreseesnetwork
+        run: kubectl apply -f k8s/ --namespace=foreseesnetwork
 
       - name: Wait for rollout — Server
         run: |
@@ -141,11 +142,10 @@ jobs:
             --timeout=120s
 
       - name: Verify pods are running
-        run: |
-          kubectl get pods --namespace=foreseesnetwork
+        run: kubectl get pods --namespace=foreseesnetwork
 
   # ─────────────────────────────────────────
-  # JOB 3 — Notify (optional Slack/Discord)
+  # JOB 3 — Notify on Failure
   # ─────────────────────────────────────────
   notify:
     name: Notify on Failure
@@ -159,7 +159,7 @@ jobs:
           echo "❌ CI/CD pipeline failed for commit ${{ github.sha }}"
           echo "Branch: ${{ github.ref_name }}"
           echo "Triggered by: ${{ github.actor }}"
-          # Swap the curl below for Slack/Discord webhook if desired:
+          # Uncomment to enable Slack/Discord:
           # curl -X POST -H 'Content-type: application/json' \
           #   --data '{"text":"❌ ForeseesNetwork deploy failed!"}' \
           #   ${{ secrets.SLACK_WEBHOOK_URL }}
