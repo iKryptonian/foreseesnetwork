@@ -131,13 +131,13 @@ jobs:
 
       - name: Wait for rollout — Server
         run: |
-          kubectl rollout status deployment/livechat-server \
+          kubectl rollout status deployment/server \
             --namespace=foreseesnetwork \
             --timeout=120s
 
       - name: Wait for rollout — Client
         run: |
-          kubectl rollout status deployment/livechat-client \
+          kubectl rollout status deployment/client \
             --namespace=foreseesnetwork \
             --timeout=120s
 
