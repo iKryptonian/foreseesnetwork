@@ -139,7 +139,7 @@ jobs:
         run: |
           kubectl rollout status deployment/client \
             --namespace=foreseesnetwork \
-            --timeout=120s
+            --timeout=300s
 
       - name: Verify pods are running
         run: kubectl get pods --namespace=foreseesnetwork

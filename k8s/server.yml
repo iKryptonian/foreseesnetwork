@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: server
-          image: ghcr.io/ikryptonian/livechat-server:latest
+          image: livechat-server:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 4000
