@@ -16,7 +16,7 @@ spec:
       containers:
         - name: client
           image: livechat-client:latest
-          imagePullPolicy: Always
+          imagePullPolicy: Never
           resources:
             requests:
               cpu: 50m
