@@ -1,5 +1,4 @@
 process.env.TZ = 'Asia/Kolkata';
-const { runBackup } = require("./backup");
 const express = require("express");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
@@ -413,15 +412,3 @@ server.listen(process.env.PORT, () => {
   console.log(`Server running on http://localhost:${process.env.PORT}`);
 });
 
-// Run backup every day at midnight
-const now = new Date();
-const midnight = new Date(now);
-midnight.setHours(24, 0, 0, 0);
-const msUntilMidnight = midnight - now;
-
-setTimeout(() => {
-  runBackup();
-  setInterval(runBackup, 24 * 60 * 60 * 1000);
-}, msUntilMidnight);
-
-console.log(`⏰ Next backup scheduled in ${Math.round(msUntilMidnight / 60000)} minutes`);

@@ -57,7 +57,7 @@ services:
       PGTZ: Asia/Kolkata
       EMAIL_USER: foreseesnetwork@gmail.com
       EMAIL_PASS: aoivchjwxrbwmjxv
-      LOCALSTACK_URL: "http://host.docker.internal:4566"
+      
     depends_on:
       postgres:
         condition: service_healthy
