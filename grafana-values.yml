@@ -1,0 +1,18 @@
+grafana.ini:
+  smtp:
+    enabled: true
+    host: smtp.gmail.com:587
+    user: foreseesnetwork@gmail.com
+    password: aoivchjwxrbwmjxv
+    from_address: foreseesnetwork@gmail.com
+    from_name: ForeseesNetwork Alerts
+    startTLS_policy: MandatoryStartTLS
+  analytics:
+    check_for_updates: true
+  log:
+    mode: console
+  paths:
+    data: /var/lib/grafana/
+    logs: /var/log/grafana
+    plugins: /var/lib/grafana/plugins
+    provisioning: /etc/grafana/provisioning
