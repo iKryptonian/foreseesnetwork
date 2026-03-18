@@ -1,5 +1,4 @@
 process.env.TZ = 'Asia/Kolkata';
-const { getSecret } = require("./aws");
 const { runBackup } = require("./backup");
 const express = require("express");
 const cors = require("cors");
@@ -12,14 +11,7 @@ const redis = require("./redis");
 const { sendOtpEmail, sendPasswordResetEmail } = require("./mailer");
 require("dotenv").config();
 
-// Fetch secrets from SSM on startup
-(async () => {
-  const emailUser = await getSecret("/foreseesnetwork/email_user");
-  const emailPass = await getSecret("/foreseesnetwork/email_pass");
-  if (emailUser) process.env.EMAIL_USER = emailUser;
-  if (emailPass) process.env.EMAIL_PASS = emailPass;
-  console.log("✅ Secrets loaded from SSM");
-})();
+
 
 const app = express();
 const server = http.createServer(app);
