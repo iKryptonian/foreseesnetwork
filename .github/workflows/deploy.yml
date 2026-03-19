@@ -39,7 +39,7 @@ jobs:
 
       - name: Auto-update Minikube certs in GitHub Secrets
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           gh secret set MINIKUBE_CA_CRT \
             --body "$(cat ~/.minikube/ca.crt | base64 | tr -d '\n')" \
