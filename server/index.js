@@ -320,6 +320,105 @@ io.on("connection", (socket) => {
     } catch (err) { console.error("remove_member error:", err); }
   });
 
+  // ── LEAVE GROUP ──
+  socket.on("leave_group", async ({ groupId, username }) => {
+    try {
+      const groupCheck = await pool.query(`SELECT created_by FROM groups WHERE id = $1`, [groupId]);
+      if (!groupCheck.rows.length) {
+        socket.emit("group_error", { message: "Group not found" });
+        return;
+      }
+      if (groupCheck.rows[0].created_by === username) {
+        socket.emit("group_error", { message: "Group creator cannot leave. Delete the group instead." });
+        return;
+      }
+      await pool.query(`DELETE FROM group_members WHERE group_id = $1 AND username = $2`, [groupId, username]);
+      socket.leave(`group:${groupId}`);
+      socket.emit("left_group", { groupId });
+      io.to(`group:${groupId}`).emit("member_left", { groupId, username });
+      console.log(`🚪 ${username} left group ${groupId}`);
+    } catch (err) { console.error("leave_group error:", err); }
+  });
+
+  // ── ADD MEMBERS TO EXISTING GROUP ──
+  socket.on("add_members", async ({ groupId, newMembers, requestedBy }) => {
+    try {
+      const adminCheck = await pool.query(
+        `SELECT role FROM group_members WHERE group_id = $1 AND username = $2`,
+        [groupId, requestedBy]
+      );
+      if (!adminCheck.rows.length || adminCheck.rows[0].role !== "admin") {
+        socket.emit("group_error", { message: "Only admins can add members" });
+        return;
+      }
+      const groupResult = await pool.query(`SELECT * FROM groups WHERE id = $1`, [groupId]);
+      const group = groupResult.rows[0];
+      const added = [];
+      for (const username of newMembers) {
+        try {
+          await pool.query(
+            `INSERT INTO group_members (group_id, username, role) VALUES ($1, $2, 'member') ON CONFLICT DO NOTHING`,
+            [groupId, username]
+          );
+          added.push(username);
+          // Join new member to group room
+          const newMemberSocketId = userSocketMap[username];
+          if (newMemberSocketId) {
+            const sock = io.sockets.sockets.get(newMemberSocketId);
+            if (sock) {
+              sock.join(`group:${groupId}`);
+              sock.emit("group_created", { ...group, members: [] });
+            }
+          }
+        } catch (e) { /* skip duplicates */ }
+      }
+      // Notify everyone in group about new members
+      const membersResult = await pool.query(
+        `SELECT gm.username, gm.role, u.avatar FROM group_members gm JOIN users u ON u.username = gm.username WHERE gm.group_id = $1`,
+        [groupId]
+      );
+      io.to(`group:${groupId}`).emit("members_added", { groupId, newMembers: added, allMembers: membersResult.rows });
+      console.log(`➕ ${added.join(', ')} added to group ${groupId} by ${requestedBy}`);
+    } catch (err) { console.error("add_members error:", err); }
+  });
+
+  // ── ADD REACTION TO MESSAGE ──
+  socket.on("add_reaction", async ({ messageId, groupId, emoji, username, isGroup }) => {
+    try {
+      const table = isGroup ? "group_messages" : "messages";
+      const result = await pool.query(`SELECT reactions FROM ${table} WHERE id = $1`, [messageId]);
+      if (!result.rows.length) return;
+
+      let reactions = result.rows[0].reactions || {};
+      if (!reactions[emoji]) reactions[emoji] = [];
+      if (reactions[emoji].includes(username)) {
+        // Toggle off
+        reactions[emoji] = reactions[emoji].filter(u => u !== username);
+        if (reactions[emoji].length === 0) delete reactions[emoji];
+      } else {
+        reactions[emoji].push(username);
+      }
+
+      await pool.query(`UPDATE ${table} SET reactions = $1 WHERE id = $2`, [JSON.stringify(reactions), messageId]);
+
+      const event = { messageId, reactions, isGroup, groupId };
+      if (isGroup) {
+        io.to(`group:${groupId}`).emit("reaction_updated", event);
+      } else {
+        // Notify both users in 1-on-1 chat
+        const msgResult = await pool.query(`SELECT from_user, to_user FROM messages WHERE id = $1`, [messageId]);
+        if (msgResult.rows.length) {
+          const { from_user, to_user } = msgResult.rows[0];
+          [from_user, to_user].forEach(u => {
+            const sid = userSocketMap[u];
+            if (sid) io.to(sid).emit("reaction_updated", event);
+          });
+        }
+      }
+    } catch (err) { console.error("add_reaction error:", err); }
+  });
+
+
 
   // ── TYPING INDICATORS ──
   socket.on("typing", ({ from, to }) => {

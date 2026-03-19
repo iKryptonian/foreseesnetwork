@@ -24,7 +24,8 @@ data:
       created_at TIMESTAMP DEFAULT NOW(),
       status     VARCHAR(10) DEFAULT 'sent',
       seq_num    INTEGER,
-      acked      BOOLEAN DEFAULT FALSE
+      acked      BOOLEAN DEFAULT FALSE,
+      reactions  JSONB DEFAULT '{}'
     );
     CREATE TABLE IF NOT EXISTS message_sequences (
       user_pair VARCHAR(50) PRIMARY KEY,
@@ -55,7 +56,9 @@ data:
       text       TEXT NOT NULL,
       time       VARCHAR(10),
       created_at TIMESTAMP DEFAULT NOW(),
-      status     VARCHAR(10) DEFAULT 'sent'
+      status     VARCHAR(10) DEFAULT 'sent',
+      reactions  JSONB DEFAULT '{}'
     );
     CREATE INDEX IF NOT EXISTS idx_group_messages_group ON group_messages(group_id);
     CREATE INDEX IF NOT EXISTS idx_group_members_user   ON group_members(username);
+    

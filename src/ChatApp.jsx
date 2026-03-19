@@ -60,6 +60,11 @@ export default function ChatApp({ currentUser, onLogout }) {
   const [groupMembers, setGroupMembers] = useState([]);
   const [showMembersPanel, setShowMembersPanel] = useState(false);
   const [groupTypingUsers, setGroupTypingUsers] = useState({});
+  const [showAddMembers, setShowAddMembers] = useState(false);
+  const [addMemberSearch, setAddMemberSearch] = useState("");
+  const [membersToAdd, setMembersToAdd] = useState([]);
+  const [addingMembers, setAddingMembers] = useState(false);
+  const [reactionPickerMsgId, setReactionPickerMsgId] = useState(null);
 
   // ── Create group modal ──
   const [showCreateGroup, setShowCreateGroup] = useState(false);
@@ -224,6 +229,40 @@ export default function ChatApp({ currentUser, onLogout }) {
       }
     });
 
+    socket.on("left_group", ({ groupId }) => {
+      setMyGroups((prev) => prev.filter((g) => g.id !== groupId));
+      if (activeGroupRef.current?.id === groupId) {
+        setActiveGroup(null);
+        setGroupMessages([]);
+        setShowMembersPanel(false);
+      }
+    });
+
+    socket.on("member_left", ({ groupId, username }) => {
+      setGroupMembers((prev) => prev.filter((m) => m.username !== username));
+    });
+
+    socket.on("members_added", ({ groupId, allMembers }) => {
+      if (activeGroupRef.current?.id === groupId) {
+        setGroupMembers(allMembers);
+      }
+      setMyGroups((prev) =>
+        prev.map((g) => g.id === groupId ? { ...g, member_count: allMembers.length } : g)
+      );
+    });
+
+    socket.on("reaction_updated", ({ messageId, reactions, isGroup }) => {
+      if (isGroup) {
+        setGroupMessages((prev) =>
+          prev.map((m) => m.id === messageId ? { ...m, reactions } : m)
+        );
+      } else {
+        setMessages((prev) =>
+          prev.map((m) => m.id === messageId ? { ...m, reactions } : m)
+        );
+      }
+    });
+
     socket.on("group_typing", ({ from, groupId }) => {
       if (activeGroupRef.current?.id === groupId) {
         setGroupTypingUsers((p) => ({ ...p, [from]: true }));
@@ -253,6 +292,10 @@ export default function ChatApp({ currentUser, onLogout }) {
       socket.off("group_role_updated");
       socket.off("member_removed");
       socket.off("removed_from_group");
+      socket.off("left_group");
+      socket.off("member_left");
+      socket.off("members_added");
+      socket.off("reaction_updated");
       socket.off("group_typing");
       socket.off("group_stop_typing");
       socket.off("group_error");
@@ -580,6 +623,35 @@ export default function ChatApp({ currentUser, onLogout }) {
     });
   };
 
+  const leaveGroup = () => {
+    if (!window.confirm(`Leave ${activeGroup.name}?`)) return;
+    socket.emit("leave_group", { groupId: activeGroup.id, username: currentUser.username });
+  };
+
+  const addMembers = () => {
+    if (membersToAdd.length === 0) return;
+    setAddingMembers(true);
+    socket.emit("add_members", {
+      groupId: activeGroup.id,
+      newMembers: membersToAdd,
+      requestedBy: currentUser.username,
+    });
+    setMembersToAdd([]);
+    setShowAddMembers(false);
+    setAddingMembers(false);
+  };
+
+  const toggleReaction = (messageId, emoji, isGroup) => {
+    socket.emit("add_reaction", {
+      messageId,
+      groupId: activeGroup?.id,
+      emoji,
+      username: currentUser.username,
+      isGroup: !!isGroup,
+    });
+    setReactionPickerMsgId(null);
+  };
+
   const myRoleInGroup = groupMembers.find((m) => m.username === currentUser.username)?.role;
   const isGroupAdmin = myRoleInGroup === "admin";
   const isGroupCreator = activeGroup?.created_by === currentUser.username;
@@ -592,6 +664,61 @@ export default function ChatApp({ currentUser, onLogout }) {
     <div className="chat-layout" style={{ background: "#0f0f1e", fontFamily: "'Segoe UI', system-ui, sans-serif", color: "#fff", overflow: "hidden" }}>
 
       {/* ── CREATE GROUP MODAL ── */}
+      {showAddMembers && activeGroup && (
+        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowAddMembers(false)}>
+          <div className="modal-box">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+              <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700 }}>Add Members to {activeGroup.name}</h3>
+              <button onClick={() => setShowAddMembers(false)} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.4)", fontSize: "18px", cursor: "pointer" }}>✕</button>
+            </div>
+            <input
+              style={{ ...c.input, width: "100%", boxSizing: "border-box", marginBottom: "12px" }}
+              placeholder="Search users..."
+              value={addMemberSearch}
+              onChange={(e) => setAddMemberSearch(e.target.value)}
+            />
+            <div style={{ maxHeight: "220px", overflowY: "auto", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.08)", marginBottom: "16px" }}>
+              {allUsers
+                .filter((u) => !groupMembers.find((m) => m.username === u.username))
+                .filter((u) => u.username.toLowerCase().includes(addMemberSearch.toLowerCase()))
+                .map((u) => {
+                  const selected = membersToAdd.includes(u.username);
+                  return (
+                    <div
+                      key={u.username}
+                      className="member-pick"
+                      onClick={() => setMembersToAdd((prev) =>
+                        prev.includes(u.username) ? prev.filter((x) => x !== u.username) : [...prev, u.username]
+                      )}
+                      style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 14px", cursor: "pointer", background: selected ? "rgba(102,126,234,0.15)" : "transparent" }}
+                    >
+                      <div style={{ ...c.itemAvatar, width: "34px", height: "34px", fontSize: "13px", background: avatarColor(u.username), flexShrink: 0 }}>
+                        {u.username[0].toUpperCase()}
+                      </div>
+                      <span style={{ flex: 1, fontSize: "14px" }}>@{u.username}</span>
+                      <div style={{ width: "18px", height: "18px", borderRadius: "50%", border: `2px solid ${selected ? "#667eea" : "rgba(255,255,255,0.2)"}`, background: selected ? "#667eea" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px" }}>
+                        {selected && "✓"}
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+            <button
+              onClick={addMembers}
+              disabled={membersToAdd.length === 0 || addingMembers}
+              style={{
+                width: "100%", padding: "12px",
+                background: membersToAdd.length > 0 ? "linear-gradient(135deg, #667eea, #764ba2)" : "rgba(255,255,255,0.1)",
+                border: "none", borderRadius: "10px", color: "#fff",
+                fontSize: "14px", fontWeight: 700, cursor: membersToAdd.length > 0 ? "pointer" : "not-allowed",
+              }}
+            >
+              {addingMembers ? "Adding..." : `Add ${membersToAdd.length > 0 ? membersToAdd.length + " member(s)" : "Members"}`}
+            </button>
+          </div>
+        </div>
+      )}
+
       {showCreateGroup && (
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowCreateGroup(false)}>
           <div className="modal-box">
@@ -862,16 +989,34 @@ export default function ChatApp({ currentUser, onLogout }) {
                       )}
                     </div>
                   </div>
-                  <button
-                    onClick={() => setShowMembersPanel((v) => !v)}
-                    style={{
-                      background: showMembersPanel ? "rgba(102,126,234,0.2)" : "rgba(255,255,255,0.07)",
-                      border: "1px solid rgba(255,255,255,0.1)", borderRadius: "8px",
-                      color: "#fff", padding: "6px 12px", cursor: "pointer", fontSize: "12px",
-                    }}
-                  >
-                    👥 Members
-                  </button>
+                  <div style={{ display: "flex", gap: "6px" }}>
+                    {isGroupAdmin && (
+                      <button
+                        onClick={() => setShowAddMembers(true)}
+                        style={{
+                          background: "rgba(67,233,123,0.1)", border: "1px solid rgba(67,233,123,0.3)",
+                          borderRadius: "8px", color: "#43e97b", padding: "6px 12px", cursor: "pointer", fontSize: "12px",
+                        }}
+                      >+ Add</button>
+                    )}
+                    <button
+                      onClick={() => setShowMembersPanel((v) => !v)}
+                      style={{
+                        background: showMembersPanel ? "rgba(102,126,234,0.2)" : "rgba(255,255,255,0.07)",
+                        border: "1px solid rgba(255,255,255,0.1)", borderRadius: "8px",
+                        color: "#fff", padding: "6px 12px", cursor: "pointer", fontSize: "12px",
+                      }}
+                    >👥 Members</button>
+                    {!isGroupCreator && (
+                      <button
+                        onClick={leaveGroup}
+                        style={{
+                          background: "rgba(245,87,108,0.1)", border: "1px solid rgba(245,87,108,0.3)",
+                          borderRadius: "8px", color: "#f5576c", padding: "6px 12px", cursor: "pointer", fontSize: "12px",
+                        }}
+                      >🚪 Leave</button>
+                    )}
+                  </div>
                 </>
               )}
 
@@ -965,14 +1110,36 @@ export default function ChatApp({ currentUser, onLogout }) {
                                   )}
                                 </div>
                               )}
-                              <div style={{
-                                ...c.bubble,
-                                background: isMe ? "linear-gradient(135deg, #667eea, #764ba2)" : "rgba(255,255,255,0.08)",
-                                borderRadius: isMe ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
-                                opacity: msg.optimistic ? 0.7 : 1,
-                              }}>
+                              <div
+                                style={{
+                                  ...c.bubble,
+                                  background: isMe ? "linear-gradient(135deg, #667eea, #764ba2)" : "rgba(255,255,255,0.08)",
+                                  borderRadius: isMe ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
+                                  opacity: msg.optimistic ? 0.7 : 1,
+                                  cursor: "pointer",
+                                  position: "relative",
+                                }}
+                                onMouseEnter={() => !msg.optimistic && setReactionPickerMsgId(msg.id)}
+                                onMouseLeave={() => setReactionPickerMsgId(null)}
+                              >
                                 {msg.text}
+                                {reactionPickerMsgId === msg.id && (
+                                  <div style={{ position: "absolute", [isMe ? "left" : "right"]: "0", bottom: "calc(100% + 4px)", background: "#1e1e3a", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "20px", padding: "4px 8px", display: "flex", gap: "6px", zIndex: 10, whiteSpace: "nowrap" }}>
+                                    {["👍","❤️","😂","😮","😢","🔥"].map((emoji) => (
+                                      <span key={emoji} onClick={() => toggleReaction(msg.id, emoji, true)} style={{ fontSize: "16px", cursor: "pointer", padding: "2px" }}>{emoji}</span>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
+                              {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", justifyContent: isMe ? "flex-end" : "flex-start", paddingLeft: "4px", paddingRight: "4px" }}>
+                                  {Object.entries(msg.reactions).map(([emoji, users]) => (
+                                    <span key={emoji} onClick={() => toggleReaction(msg.id, emoji, true)} style={{ background: users.includes(currentUser.username) ? "rgba(102,126,234,0.3)" : "rgba(255,255,255,0.08)", border: `1px solid ${users.includes(currentUser.username) ? "rgba(102,126,234,0.5)" : "rgba(255,255,255,0.1)"}`, borderRadius: "12px", padding: "2px 6px", fontSize: "12px", cursor: "pointer" }}>
+                                      {emoji} {users.length}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
                               <div style={{ display: "flex", alignItems: "center", justifyContent: isMe ? "flex-end" : "flex-start", gap: "3px", paddingLeft: "4px" }}>
                                 <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.2)" }}>{formatTime(msg)}</span>
                               </div>
