@@ -229,6 +229,72 @@ io.on("connection", (socket) => {
     }
   });
 
+  // ── DEMOTE ADMIN → MEMBER ──
+  socket.on("demote_admin", async ({ groupId, targetUser, requestedBy }) => {
+    try {
+      const adminCheck = await pool.query(
+        `SELECT role FROM group_members WHERE group_id = $1 AND username = $2`,
+        [groupId, requestedBy]
+      );
+      if (!adminCheck.rows.length || adminCheck.rows[0].role !== "admin") {
+        socket.emit("group_error", { message: "Only admins can demote members" });
+        return;
+      }
+      if (targetUser === requestedBy) {
+        socket.emit("group_error", { message: "You cannot demote yourself" });
+        return;
+      }
+      const groupCheck = await pool.query(`SELECT created_by FROM groups WHERE id = $1`, [groupId]);
+      if (groupCheck.rows[0].created_by === targetUser) {
+        socket.emit("group_error", { message: "Cannot demote the group creator" });
+        return;
+      }
+      await pool.query(
+        `UPDATE group_members SET role = 'member' WHERE group_id = $1 AND username = $2`,
+        [groupId, targetUser]
+      );
+      io.to(`group:${groupId}`).emit("group_role_updated", {
+        groupId, username: targetUser, role: "member", demotedBy: requestedBy,
+      });
+      console.log(`⬇️ ${targetUser} demoted to member in group ${groupId} by ${requestedBy}`);
+    } catch (err) { console.error("demote_admin error:", err); }
+  });
+
+  // ── REMOVE MEMBER FROM GROUP ──
+  socket.on("remove_member", async ({ groupId, targetUser, requestedBy }) => {
+    try {
+      const adminCheck = await pool.query(
+        `SELECT role FROM group_members WHERE group_id = $1 AND username = $2`,
+        [groupId, requestedBy]
+      );
+      if (!adminCheck.rows.length || adminCheck.rows[0].role !== "admin") {
+        socket.emit("group_error", { message: "Only admins can remove members" });
+        return;
+      }
+      if (targetUser === requestedBy) {
+        socket.emit("group_error", { message: "You cannot remove yourself" });
+        return;
+      }
+      const groupCheck = await pool.query(`SELECT created_by FROM groups WHERE id = $1`, [groupId]);
+      if (groupCheck.rows[0].created_by === targetUser) {
+        socket.emit("group_error", { message: "Cannot remove the group creator" });
+        return;
+      }
+      await pool.query(`DELETE FROM group_members WHERE group_id = $1 AND username = $2`, [groupId, targetUser]);
+      const removedSocketId = userSocketMap[targetUser];
+      if (removedSocketId) {
+        const sock = io.sockets.sockets.get(removedSocketId);
+        if (sock) {
+          sock.leave(`group:${groupId}`);
+          sock.emit("removed_from_group", { groupId, removedBy: requestedBy });
+        }
+      }
+      io.to(`group:${groupId}`).emit("member_removed", { groupId, username: targetUser, removedBy: requestedBy });
+      console.log(`❌ ${targetUser} removed from group ${groupId} by ${requestedBy}`);
+    } catch (err) { console.error("remove_member error:", err); }
+  });
+
+
   // ── TYPING INDICATORS ──
   socket.on("typing", ({ from, to }) => {
     const recipientSocketId = userSocketMap[to];

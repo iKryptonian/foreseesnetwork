@@ -34,3 +34,28 @@ data:
     CREATE INDEX IF NOT EXISTS idx_messages_created ON messages (created_at);
     CREATE INDEX IF NOT EXISTS idx_messages_seq     ON messages (from_user, to_user, seq_num);
     CREATE INDEX IF NOT EXISTS idx_messages_unacked ON messages (to_user, acked) WHERE acked = FALSE;
+    CREATE TABLE IF NOT EXISTS groups (
+      id         SERIAL PRIMARY KEY,
+      name       VARCHAR(100) NOT NULL,
+      created_by VARCHAR(22) NOT NULL,
+      avatar     VARCHAR(5),
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS group_members (
+      group_id  INTEGER REFERENCES groups(id) ON DELETE CASCADE,
+      username  VARCHAR(22) NOT NULL,
+      role      VARCHAR(10) DEFAULT 'member',
+      joined_at TIMESTAMP DEFAULT NOW(),
+      PRIMARY KEY (group_id, username)
+    );
+    CREATE TABLE IF NOT EXISTS group_messages (
+      id         SERIAL PRIMARY KEY,
+      group_id   INTEGER REFERENCES groups(id) ON DELETE CASCADE,
+      from_user  VARCHAR(22) NOT NULL,
+      text       TEXT NOT NULL,
+      time       VARCHAR(10),
+      created_at TIMESTAMP DEFAULT NOW(),
+      status     VARCHAR(10) DEFAULT 'sent'
+    );
+    CREATE INDEX IF NOT EXISTS idx_group_messages_group ON group_messages(group_id);
+    CREATE INDEX IF NOT EXISTS idx_group_members_user   ON group_members(username);

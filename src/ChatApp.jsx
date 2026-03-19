@@ -208,6 +208,22 @@ export default function ChatApp({ currentUser, onLogout }) {
       );
     });
 
+    socket.on("member_removed", ({ groupId, username }) => {
+      setGroupMembers((prev) => prev.filter((m) => m.username !== username));
+      setMyGroups((prev) =>
+        prev.map((g) => g.id === groupId ? { ...g, member_count: Math.max(0, (g.member_count || 1) - 1) } : g)
+      );
+    });
+
+    socket.on("removed_from_group", ({ groupId }) => {
+      setMyGroups((prev) => prev.filter((g) => g.id !== groupId));
+      if (activeGroupRef.current?.id === groupId) {
+        setActiveGroup(null);
+        setGroupMessages([]);
+        setShowMembersPanel(false);
+      }
+    });
+
     socket.on("group_typing", ({ from, groupId }) => {
       if (activeGroupRef.current?.id === groupId) {
         setGroupTypingUsers((p) => ({ ...p, [from]: true }));
@@ -235,6 +251,8 @@ export default function ChatApp({ currentUser, onLogout }) {
       socket.off("group_created");
       socket.off("receive_group_message");
       socket.off("group_role_updated");
+      socket.off("member_removed");
+      socket.off("removed_from_group");
       socket.off("group_typing");
       socket.off("group_stop_typing");
       socket.off("group_error");
@@ -539,6 +557,23 @@ export default function ChatApp({ currentUser, onLogout }) {
   // ── PROMOTE TO ADMIN ──
   const promoteToAdmin = (targetUser) => {
     socket.emit("make_admin", {
+      groupId: activeGroup.id,
+      targetUser,
+      requestedBy: currentUser.username,
+    });
+  };
+
+  const demoteAdmin = (targetUser) => {
+    socket.emit("demote_admin", {
+      groupId: activeGroup.id,
+      targetUser,
+      requestedBy: currentUser.username,
+    });
+  };
+
+  const removeMember = (targetUser) => {
+    if (!window.confirm(`Remove @${targetUser} from the group?`)) return;
+    socket.emit("remove_member", {
       groupId: activeGroup.id,
       targetUser,
       requestedBy: currentUser.username,
@@ -1002,18 +1037,40 @@ export default function ChatApp({ currentUser, onLogout }) {
                         </div>
                       </div>
                       {/* Promote button — only admins see it, only for non-admins */}
-                      {isGroupAdmin && m.role !== "admin" && m.username !== currentUser.username && (
-                        <button
-                          onClick={() => promoteToAdmin(m.username)}
-                          title="Make Admin"
-                          style={{
-                            background: "rgba(246,211,101,0.1)", border: "1px solid rgba(246,211,101,0.3)",
-                            borderRadius: "6px", color: "#f6d365", fontSize: "10px",
-                            padding: "3px 6px", cursor: "pointer", flexShrink: 0,
-                          }}
-                        >
-                          👑
-                        </button>
+                      {isGroupAdmin && m.username !== currentUser.username && (
+                        <div style={{ display: "flex", gap: "4px", flexShrink: 0 }}>
+                          {m.role !== "admin" && (
+                            <button
+                              onClick={() => promoteToAdmin(m.username)}
+                              title="Promote to Admin"
+                              style={{
+                                background: "rgba(246,211,101,0.1)", border: "1px solid rgba(246,211,101,0.3)",
+                                borderRadius: "6px", color: "#f6d365", fontSize: "10px",
+                                padding: "3px 6px", cursor: "pointer",
+                              }}
+                            >👑</button>
+                          )}
+                          {m.role === "admin" && (
+                            <button
+                              onClick={() => demoteAdmin(m.username)}
+                              title="Demote to Member"
+                              style={{
+                                background: "rgba(255,165,0,0.1)", border: "1px solid rgba(255,165,0,0.3)",
+                                borderRadius: "6px", color: "#ffa500", fontSize: "10px",
+                                padding: "3px 6px", cursor: "pointer",
+                              }}
+                            >⬇️</button>
+                          )}
+                          <button
+                            onClick={() => removeMember(m.username)}
+                            title="Remove from Group"
+                            style={{
+                              background: "rgba(245,87,108,0.1)", border: "1px solid rgba(245,87,108,0.3)",
+                              borderRadius: "6px", color: "#f5576c", fontSize: "10px",
+                              padding: "3px 6px", cursor: "pointer",
+                            }}
+                          >✕</button>
+                        </div>
                       )}
                     </div>
                   ))}
