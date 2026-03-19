@@ -37,46 +37,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Auto-update Minikube certs in GitHub Secrets
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
-        run: |
-          gh secret set MINIKUBE_CA_CRT \
-            --body "$(cat ~/.minikube/ca.crt | base64 | tr -d '\n')" \
-            --repo ${{ github.repository }}
-          gh secret set MINIKUBE_CLIENT_CRT \
-            --body "$(cat ~/.minikube/profiles/minikube/client.crt | base64 | tr -d '\n')" \
-            --repo ${{ github.repository }}
-          gh secret set MINIKUBE_CLIENT_KEY \
-            --body "$(cat ~/.minikube/profiles/minikube/client.key | base64 | tr -d '\n')" \
-            --repo ${{ github.repository }}
-
-      - name: Configure kubeconfig
-        run: |
-          mkdir -p /Users/nivashp/.kube
-          MINIKUBE_PORT=$(minikube ip 2>/dev/null | xargs -I{} kubectl config view --raw -o jsonpath='{.clusters[?(@.name=="minikube")].cluster.server}' | grep -oE '[0-9]+$' || echo "8443")
-          MINIKUBE_SERVER=$(kubectl config view --raw -o jsonpath='{.clusters[?(@.name=="minikube")].cluster.server}')
-          cat > /Users/nivashp/.kube/config << EOF
-          apiVersion: v1
-          clusters:
-          - cluster:
-              certificate-authority-data: $(cat ~/.minikube/ca.crt | base64 | tr -d '\n')
-              server: ${MINIKUBE_SERVER}
-            name: minikube
-          contexts:
-          - context:
-              cluster: minikube
-              user: minikube
-            name: minikube
-          current-context: minikube
-          kind: Config
-          users:
-          - name: minikube
-            user:
-              client-certificate-data: $(cat ~/.minikube/profiles/minikube/client.crt | base64 | tr -d '\n')
-              client-key-data: $(cat ~/.minikube/profiles/minikube/client.key | base64 | tr -d '\n')
-          EOF
-          chmod 600 /Users/nivashp/.kube/config
+      - name: Update kubeconfig from live Minikube
+        run: minikube update-context
 
       - name: Load images into Minikube
         run: |
