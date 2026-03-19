@@ -1058,14 +1058,94 @@ export default function ChatApp({ currentUser, onLogout }) {
                               </div>
                             )}
                             <div style={{ maxWidth: "70%", display: "flex", flexDirection: "column", gap: "2px" }}>
-                              <div style={{
-                                ...c.bubble,
-                                background: isMe ? (msg.status === "failed" ? "rgba(245,87,108,0.3)" : "linear-gradient(135deg, #667eea, #764ba2)") : "rgba(255,255,255,0.08)",
-                                borderRadius: isMe ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
-                                opacity: msg.optimistic ? 0.7 : 1,
-                              }}>
+                              <div
+                                onMouseDown={(e) => {
+                                  if (msg.optimistic) return;
+                                  const x = e.clientX; const y = e.clientY;
+                                  longPressTimeout.current = setTimeout(() => {
+                                    setReactionPickerPos({ x, y });
+                                    setReactionPickerMsgId(msg.id);
+                                    setShowAllEmojis(false);
+                                  }, 500);
+                                }}
+                                onMouseUp={() => clearTimeout(longPressTimeout.current)}
+                                onMouseLeave={() => clearTimeout(longPressTimeout.current)}
+                                onTouchStart={(e) => {
+                                  if (msg.optimistic) return;
+                                  e.preventDefault();
+                                  const x = e.touches[0].clientX; const y = e.touches[0].clientY;
+                                  longPressTimeout.current = setTimeout(() => {
+                                    setReactionPickerPos({ x, y });
+                                    setReactionPickerMsgId(msg.id);
+                                    setShowAllEmojis(false);
+                                  }, 500);
+                                }}
+                                onTouchEnd={() => clearTimeout(longPressTimeout.current)}
+                                onContextMenu={(e) => e.preventDefault()}
+                                style={{
+                                  ...c.bubble,
+                                  background: isMe ? (msg.status === "failed" ? "rgba(245,87,108,0.3)" : "linear-gradient(135deg, #667eea, #764ba2)") : "rgba(255,255,255,0.08)",
+                                  borderRadius: isMe ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
+                                  opacity: msg.optimistic ? 0.7 : 1,
+                                  cursor: "pointer",
+                                  userSelect: "none",
+                                  WebkitUserSelect: "none",
+                                }}
+                              >
                                 {msg.text}
+                                {reactionPickerMsgId === msg.id && (
+                                  <div
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    onTouchStart={(e) => e.stopPropagation()}
+                                    onWheel={(e) => e.stopPropagation()}
+                                    style={{
+                                      position: "fixed",
+                                      top: Math.max(10, reactionPickerPos.y - (showAllEmojis ? 220 : 60)),
+                                      left: Math.min(Math.max(10, reactionPickerPos.x - 10), window.innerWidth - (showAllEmojis ? 330 : 220)),
+                                      background: "#1e1e3a",
+                                      border: "1px solid rgba(255,255,255,0.15)",
+                                      borderRadius: "16px",
+                                      padding: "8px 10px",
+                                      display: "flex",
+                                      flexWrap: "wrap",
+                                      gap: "4px",
+                                      zIndex: 2000,
+                                      boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+                                      width: showAllEmojis ? "min(320px, 90vw)" : "auto",
+                                      maxHeight: showAllEmojis ? "min(200px, 40vh)" : "none",
+                                      overflowY: showAllEmojis ? "auto" : "visible",
+                                    }}
+                                  >
+                                    {(showAllEmojis
+                                      ? ["👍","❤️","😂","😮","😢","🔥","🎉","👏","😍","🤔","😡","💯","🙏","✅","💪","😎","🤣","😭","🥳","💀","😀","😃","😄","😁","😆","😅","🙂","🙃","😉","😊","😇","🥰","🤩","😘","😋","😛","😜","🤪","😝","🤑","🤗","🤭","🤫","😐","😑","😶","😏","😒","🙄","😬","😌","😔","😪","😴","😷","🤒","🤕","🤢","🤮","🤧","🥵","🥶","😵","🤯","🤠","🧐","😕","😟","🙁","☹️","😯","😲","😳","🥺","😦","😧","😨","😰","😥","😱","😖","😣","😞","😓","😩","😫","🥱","😤","😠","🤬","😈","👿","☠️","💩","🤡","👋","✋","👌","✌️","🤞","👎","✊","👊","👏","🙌","🧡","💛","💚","💙","💜","🖤","💔","❣️","💕","💞","💓","💗","💖","💘","💝","💥","✨","🌟","⭐","💫","🎊","🎈"]
+                                      : ["👍","❤️","😂","😮","😢"]
+                                    ).map((emoji) => (
+                                      <span
+                                        key={emoji}
+                                        onClick={(e) => { e.stopPropagation(); toggleReaction(msg.id, emoji, false); setReactionPickerMsgId(null); setShowAllEmojis(false); }}
+                                        style={{ fontSize: "18px", cursor: "pointer", padding: "2px 3px", borderRadius: "6px", transition: "transform 0.1s" }}
+                                        onMouseEnter={(e) => e.target.style.transform = "scale(1.3)"}
+                                        onMouseLeave={(e) => e.target.style.transform = "scale(1)"}
+                                      >{emoji}</span>
+                                    ))}
+                                    {!showAllEmojis && (
+                                      <span
+                                        onClick={(e) => { e.stopPropagation(); setShowAllEmojis(true); }}
+                                        style={{ fontSize: "14px", cursor: "pointer", padding: "2px 8px", borderRadius: "10px", background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.7)", display: "flex", alignItems: "center" }}
+                                      >+</span>
+                                    )}
+                                  </div>
+                                )}
                               </div>
+                              {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", justifyContent: isMe ? "flex-end" : "flex-start", paddingLeft: "4px", paddingRight: "4px" }}>
+                                  {Object.entries(msg.reactions).map(([emoji, users]) => (
+                                    <span key={emoji} onClick={() => toggleReaction(msg.id, emoji, false)} style={{ background: users.includes(currentUser.username) ? "rgba(102,126,234,0.3)" : "rgba(255,255,255,0.08)", border: `1px solid ${users.includes(currentUser.username) ? "rgba(102,126,234,0.5)" : "rgba(255,255,255,0.1)"}`, borderRadius: "12px", padding: "2px 6px", fontSize: "12px", cursor: "pointer" }}>
+                                      {emoji} {users.length}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
                               <div style={{ display: "flex", alignItems: "center", justifyContent: isMe ? "flex-end" : "flex-start", gap: "3px", paddingLeft: "4px", paddingRight: "4px" }}>
                                 <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.2)" }}>{formatTime(msg)}</span>
                                 {isMe && statusTick(msg.status)}
@@ -1121,6 +1201,8 @@ export default function ChatApp({ currentUser, onLogout }) {
                                   opacity: msg.optimistic ? 0.7 : 1,
                                   cursor: "pointer",
                                   position: "relative",
+                                  userSelect: "none",
+                                  WebkitUserSelect: "none",
                                 }}
                                 onMouseDown={(e) => {
                                   if (msg.optimistic) return;
