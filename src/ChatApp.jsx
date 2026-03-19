@@ -65,6 +65,8 @@ export default function ChatApp({ currentUser, onLogout }) {
   const [membersToAdd, setMembersToAdd] = useState([]);
   const [addingMembers, setAddingMembers] = useState(false);
   const [reactionPickerMsgId, setReactionPickerMsgId] = useState(null);
+  const [showAllEmojis, setShowAllEmojis] = useState(false);
+  const reactionHoverTimeout = useRef(null);
 
   // ── Create group modal ──
   const [showCreateGroup, setShowCreateGroup] = useState(false);
@@ -1119,15 +1121,86 @@ export default function ChatApp({ currentUser, onLogout }) {
                                   cursor: "pointer",
                                   position: "relative",
                                 }}
-                                onMouseEnter={() => !msg.optimistic && setReactionPickerMsgId(msg.id)}
-                                onMouseLeave={() => setReactionPickerMsgId(null)}
+                                onMouseEnter={() => {
+                                  if (msg.optimistic) return;
+                                  clearTimeout(reactionHoverTimeout.current);
+                                  setReactionPickerMsgId(msg.id);
+                                  setShowAllEmojis(false);
+                                }}
+                                onMouseLeave={() => {
+                                  reactionHoverTimeout.current = setTimeout(() => {
+                                    setReactionPickerMsgId(null);
+                                    setShowAllEmojis(false);
+                                  }, 400);
+                                }}
                               >
                                 {msg.text}
                                 {reactionPickerMsgId === msg.id && (
-                                  <div style={{ position: "absolute", [isMe ? "left" : "right"]: "0", bottom: "calc(100% + 4px)", background: "#1e1e3a", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "20px", padding: "4px 8px", display: "flex", gap: "6px", zIndex: 10, whiteSpace: "nowrap" }}>
-                                    {["👍","❤️","😂","😮","😢","🔥"].map((emoji) => (
-                                      <span key={emoji} onClick={() => toggleReaction(msg.id, emoji, true)} style={{ fontSize: "16px", cursor: "pointer", padding: "2px" }}>{emoji}</span>
+                                  <div
+                                    onMouseEnter={() => clearTimeout(reactionHoverTimeout.current)}
+                                    onMouseLeave={() => {
+                                      reactionHoverTimeout.current = setTimeout(() => {
+                                        setReactionPickerMsgId(null);
+                                        setShowAllEmojis(false);
+                                      }, 400);
+                                    }}
+                                    style={{
+                                      position: "fixed",
+                                      bottom: "auto",
+                                      background: "#1e1e3a",
+                                      border: "1px solid rgba(255,255,255,0.15)",
+                                      borderRadius: "16px",
+                                      padding: "8px 10px",
+                                      display: "flex",
+                                      flexWrap: "wrap",
+                                      gap: "4px",
+                                      zIndex: 1000,
+                                      boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+                                      width: showAllEmojis ? "min(320px, 90vw)" : "auto",
+                                      maxHeight: showAllEmojis ? "min(200px, 40vh)" : "none",
+                                      overflowY: showAllEmojis ? "auto" : "visible",
+                                      transform: "translateY(-120%)",
+                                      left: isMe ? "auto" : "10px",
+                                      right: isMe ? "10px" : "auto",
+                                    }}
+                                  >
+                                    {(showAllEmojis
+                                      ? [
+                                          // Smileys
+                                          "😀","😃","😄","😁","😆","😅","🤣","😂","🙂","🙃","😉","😊","😇","🥰","😍","🤩","😘","😗","😚","😙",
+                                          "😋","😛","😜","🤪","😝","🤑","🤗","🤭","🤫","🤔","🤐","🤨","😐","😑","😶","😏","😒","🙄","😬","🤥",
+                                          "😌","😔","😪","🤤","😴","😷","🤒","🤕","🤢","🤮","🤧","🥵","🥶","🥴","😵","🤯","🤠","🥳","😎","🤓",
+                                          "🧐","😕","😟","🙁","☹️","😮","😯","😲","😳","🥺","😦","😧","😨","😰","😥","😢","😭","😱","😖","😣",
+                                          "😞","😓","😩","😫","🥱","😤","😡","😠","🤬","😈","👿","💀","☠️","💩","🤡","👹","👺","👻","👽","👾","🤖",
+                                          // Gestures
+                                          "👋","🤚","🖐","✋","🖖","👌","🤌","🤏","✌️","🤞","🤟","🤘","🤙","👈","👉","👆","🖕","👇","☝️","👍",
+                                          "👎","✊","👊","🤛","🤜","👏","🙌","👐","🤲","🤝","🙏","✍️","💅","🤳","💪","🦾","🦿","🦵","🦶","👂",
+                                          // Hearts & symbols
+                                          "❤️","🧡","💛","💚","💙","💜","🖤","🤍","🤎","💔","❣️","💕","💞","💓","💗","💖","💘","💝","💟","☮️",
+                                          "✝️","☯️","🔥","💥","✨","🌟","⭐","💫","🎉","🎊","🎈","🎁","🏆","🥇","❓","❗","💯","🔔","🔕","🚨",
+                                          // Animals
+                                          "🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼","🐨","🐯","🦁","🐮","🐷","🐸","🐵","🙈","🙉","🙊","🐔","🐧",
+                                          // Food
+                                          "🍎","🍊","🍋","🍇","🍓","🍕","🍔","🍟","🌮","🍜","🍣","🍦","🎂","🍰","🍫","🍬","🍭","☕","🧃","🍺",
+                                          // Activities
+                                          "⚽","🏀","🏈","⚾","🎾","🏐","🎮","🎲","🎯","🎸","🎹","🎺","🎻","🥁","🎤","🎧","🎬","🎭","🎨","🖼️",
+                                        ]
+                                      : ["👍","❤️","😂","😮","😢"]
+                                    ).map((emoji) => (
+                                      <span
+                                        key={emoji}
+                                        onClick={(e) => { e.stopPropagation(); toggleReaction(msg.id, emoji, true); }}
+                                        style={{ fontSize: "18px", cursor: "pointer", padding: "2px 3px", borderRadius: "6px", transition: "transform 0.1s" }}
+                                        onMouseEnter={(e) => e.target.style.transform = "scale(1.3)"}
+                                        onMouseLeave={(e) => e.target.style.transform = "scale(1)"}
+                                      >{emoji}</span>
                                     ))}
+                                    {!showAllEmojis && (
+                                      <span
+                                        onClick={(e) => { e.stopPropagation(); setShowAllEmojis(true); }}
+                                        style={{ fontSize: "14px", cursor: "pointer", padding: "2px 6px", borderRadius: "10px", background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.7)", display: "flex", alignItems: "center" }}
+                                      >+</span>
+                                    )}
                                   </div>
                                 )}
                               </div>
