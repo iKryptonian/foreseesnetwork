@@ -26,6 +26,8 @@ if (!document.getElementById("chatapp-styles")) {
       .chat-window.visible { transform: translateX(0); }
     }
     input::placeholder { color: rgba(255,255,255,0.3); }
+    .msg-bubble { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+    .msg-bubble:active { opacity: 0.85; }
     .user-item:hover { background: rgba(255,255,255,0.04) !important; }
     .modal-overlay {
       position: fixed; inset: 0; background: rgba(0,0,0,0.7);
@@ -669,11 +671,82 @@ export default function ChatApp({ currentUser, onLogout }) {
 
       {/* ── CREATE GROUP MODAL ── */}
       {reactionPickerMsgId && (
-        <div
-          onMouseDown={() => { setReactionPickerMsgId(null); setShowAllEmojis(false); }}
-          onTouchStart={() => { setReactionPickerMsgId(null); setShowAllEmojis(false); }}
-          style={{ position: "fixed", inset: 0, zIndex: 1999 }}
-        />
+        <>
+          {/* Backdrop */}
+          <div
+            onMouseDown={() => { setReactionPickerMsgId(null); setShowAllEmojis(false); }}
+            onTouchStart={() => { setReactionPickerMsgId(null); setShowAllEmojis(false); }}
+            style={{ position: "fixed", inset: 0, zIndex: 1999 }}
+          />
+          {/* Unified Picker */}
+          <div
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+            onWheel={(e) => e.stopPropagation()}
+            style={{
+              position: "fixed",
+              top: (() => {
+                const pickerH = showAllEmojis ? 220 : 56;
+                const headerH = 130;
+                const bottomPad = 80;
+                let top = reactionPickerPos.y - pickerH - 12;
+                if (top < headerH) top = reactionPickerPos.y + 20;
+                if (top + pickerH > window.innerHeight - bottomPad) top = window.innerHeight - bottomPad - pickerH;
+                return Math.max(headerH, top);
+              })(),
+              left: (() => {
+                const pickerW = showAllEmojis ? Math.min(320, window.innerWidth - 20) : 220;
+                let left = reactionPickerPos.x - pickerW / 2;
+                if (left < 10) left = 10;
+                if (left + pickerW > window.innerWidth - 10) left = window.innerWidth - pickerW - 10;
+                return left;
+              })(),
+              background: "#1a1a35",
+              border: "1px solid rgba(255,255,255,0.15)",
+              borderRadius: "20px",
+              padding: "10px 12px",
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "4px",
+              zIndex: 2000,
+              boxShadow: "0 12px 40px rgba(0,0,0,0.6)",
+              width: showAllEmojis ? Math.min(320, window.innerWidth - 20) : "auto",
+              maxHeight: showAllEmojis ? "min(220px, 45vh)" : "none",
+              overflowY: showAllEmojis ? "auto" : "visible",
+            }}
+          >
+            {(showAllEmojis
+              ? ["👍","❤️","😂","😮","😢","🔥","🎉","👏","😍","🤔","😡","💯","🙏","✅","💪","😎","🤣","😭","🥳","💀",
+                 "😀","😃","😄","😁","😆","😅","🙂","🙃","😉","😊","😇","🥰","🤩","😘","😋","😛","😜","🤪","😝","🤑",
+                 "🤗","🤭","🤫","😐","😑","😶","😏","😒","🙄","😬","😌","😔","😪","😴","😷","🤒","🤕","🤢","🤮","🤧",
+                 "🥵","🥶","😵","🤯","🤠","🧐","😕","😟","🙁","☹️","😯","😲","😳","🥺","😦","😧","😨","😰","😥","😱",
+                 "😖","😣","😞","😓","😩","😫","🥱","😤","😠","🤬","😈","👿","☠️","💩","🤡","👋","✋","👌","✌️","🤞",
+                 "👎","✊","👊","👏","🙌","🧡","💛","💚","💙","💜","🖤","💔","❣️","💕","💞","💓","💗","💖","💘","💝",
+                 "💥","✨","🌟","⭐","💫","🎊","🎈","🐶","🐱","🌈","🌸","🍕","🎮","🏆","🎵","🚀","💎","🌙","☀️","🌊"]
+              : ["👍","❤️","😂","😮","😢"]
+            ).map((emoji) => (
+              <span
+                key={emoji}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const isGroup = !!activeGroup;
+                  toggleReaction(reactionPickerMsgId, emoji, isGroup);
+                  setReactionPickerMsgId(null);
+                  setShowAllEmojis(false);
+                }}
+                style={{ fontSize: "20px", cursor: "pointer", padding: "3px", borderRadius: "8px", transition: "transform 0.1s", display: "inline-block" }}
+                onMouseEnter={(e) => e.currentTarget.style.transform = "scale(1.3)"}
+                onMouseLeave={(e) => e.currentTarget.style.transform = "scale(1)"}
+              >{emoji}</span>
+            ))}
+            {!showAllEmojis && (
+              <span
+                onClick={(e) => { e.stopPropagation(); setShowAllEmojis(true); }}
+                style={{ fontSize: "13px", cursor: "pointer", padding: "4px 10px", borderRadius: "12px", background: "rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.8)", display: "flex", alignItems: "center", fontWeight: 600 }}
+              >+</span>
+            )}
+          </div>
+        </>
       )}
 
       {showAddMembers && activeGroup && (
@@ -1091,51 +1164,9 @@ export default function ChatApp({ currentUser, onLogout }) {
                                   userSelect: "none",
                                   WebkitUserSelect: "none",
                                 }}
+                                className="msg-bubble"
                               >
                                 {msg.text}
-                                {reactionPickerMsgId === msg.id && (
-                                  <div
-                                    onMouseDown={(e) => e.stopPropagation()}
-                                    onTouchStart={(e) => e.stopPropagation()}
-                                    onWheel={(e) => e.stopPropagation()}
-                                    style={{
-                                      position: "fixed",
-                                      top: Math.max(10, reactionPickerPos.y - (showAllEmojis ? 220 : 60)),
-                                      left: Math.min(Math.max(10, reactionPickerPos.x - 10), window.innerWidth - (showAllEmojis ? 330 : 220)),
-                                      background: "#1e1e3a",
-                                      border: "1px solid rgba(255,255,255,0.15)",
-                                      borderRadius: "16px",
-                                      padding: "8px 10px",
-                                      display: "flex",
-                                      flexWrap: "wrap",
-                                      gap: "4px",
-                                      zIndex: 2000,
-                                      boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
-                                      width: showAllEmojis ? "min(320px, 90vw)" : "auto",
-                                      maxHeight: showAllEmojis ? "min(200px, 40vh)" : "none",
-                                      overflowY: showAllEmojis ? "auto" : "visible",
-                                    }}
-                                  >
-                                    {(showAllEmojis
-                                      ? ["👍","❤️","😂","😮","😢","🔥","🎉","👏","😍","🤔","😡","💯","🙏","✅","💪","😎","🤣","😭","🥳","💀","😀","😃","😄","😁","😆","😅","🙂","🙃","😉","😊","😇","🥰","🤩","😘","😋","😛","😜","🤪","😝","🤑","🤗","🤭","🤫","😐","😑","😶","😏","😒","🙄","😬","😌","😔","😪","😴","😷","🤒","🤕","🤢","🤮","🤧","🥵","🥶","😵","🤯","🤠","🧐","😕","😟","🙁","☹️","😯","😲","😳","🥺","😦","😧","😨","😰","😥","😱","😖","😣","😞","😓","😩","😫","🥱","😤","😠","🤬","😈","👿","☠️","💩","🤡","👋","✋","👌","✌️","🤞","👎","✊","👊","👏","🙌","🧡","💛","💚","💙","💜","🖤","💔","❣️","💕","💞","💓","💗","💖","💘","💝","💥","✨","🌟","⭐","💫","🎊","🎈"]
-                                      : ["👍","❤️","😂","😮","😢"]
-                                    ).map((emoji) => (
-                                      <span
-                                        key={emoji}
-                                        onClick={(e) => { e.stopPropagation(); toggleReaction(msg.id, emoji, false); setReactionPickerMsgId(null); setShowAllEmojis(false); }}
-                                        style={{ fontSize: "18px", cursor: "pointer", padding: "2px 3px", borderRadius: "6px", transition: "transform 0.1s" }}
-                                        onMouseEnter={(e) => e.target.style.transform = "scale(1.3)"}
-                                        onMouseLeave={(e) => e.target.style.transform = "scale(1)"}
-                                      >{emoji}</span>
-                                    ))}
-                                    {!showAllEmojis && (
-                                      <span
-                                        onClick={(e) => { e.stopPropagation(); setShowAllEmojis(true); }}
-                                        style={{ fontSize: "14px", cursor: "pointer", padding: "2px 8px", borderRadius: "10px", background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.7)", display: "flex", alignItems: "center" }}
-                                      >+</span>
-                                    )}
-                                  </div>
-                                )}
                               </div>
                               {msg.reactions && Object.keys(msg.reactions).length > 0 && (
                                 <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", justifyContent: isMe ? "flex-end" : "flex-start", paddingLeft: "4px", paddingRight: "4px" }}>
@@ -1233,69 +1264,6 @@ export default function ChatApp({ currentUser, onLogout }) {
                                 onContextMenu={(e) => e.preventDefault()}
                               >
                                 {msg.text}
-                                {reactionPickerMsgId === msg.id && (
-                                  <div
-                                    onMouseDown={(e) => e.stopPropagation()}
-                                    onTouchStart={(e) => e.stopPropagation()}
-                                    onWheel={(e) => e.stopPropagation()}
-                                    style={{
-                                      position: "fixed",
-                                      top: Math.max(10, reactionPickerPos.y - (showAllEmojis ? 220 : 60)),
-                                      left: Math.min(Math.max(10, reactionPickerPos.x - 10), window.innerWidth - (showAllEmojis ? 330 : 220)),
-                                      background: "#1e1e3a",
-                                      border: "1px solid rgba(255,255,255,0.15)",
-                                      borderRadius: "16px",
-                                      padding: "8px 10px",
-                                      display: "flex",
-                                      flexWrap: "wrap",
-                                      gap: "4px",
-                                      zIndex: 2000,
-                                      boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
-                                      width: showAllEmojis ? "min(320px, 90vw)" : "auto",
-                                      maxHeight: showAllEmojis ? "min(200px, 40vh)" : "none",
-                                      overflowY: showAllEmojis ? "auto" : "visible",
-                                    }}
-                                  >
-                                    {(showAllEmojis
-                                      ? [
-                                          // Smileys
-                                          "😀","😃","😄","😁","😆","😅","🤣","😂","🙂","🙃","😉","😊","😇","🥰","😍","🤩","😘","😗","😚","😙",
-                                          "😋","😛","😜","🤪","😝","🤑","🤗","🤭","🤫","🤔","🤐","🤨","😐","😑","😶","😏","😒","🙄","😬","🤥",
-                                          "😌","😔","😪","🤤","😴","😷","🤒","🤕","🤢","🤮","🤧","🥵","🥶","🥴","😵","🤯","🤠","🥳","😎","🤓",
-                                          "🧐","😕","😟","🙁","☹️","😮","😯","😲","😳","🥺","😦","😧","😨","😰","😥","😢","😭","😱","😖","😣",
-                                          "😞","😓","😩","😫","🥱","😤","😡","😠","🤬","😈","👿","💀","☠️","💩","🤡","👹","👺","👻","👽","👾","🤖",
-                                          // Gestures
-                                          "👋","🤚","🖐","✋","🖖","👌","🤌","🤏","✌️","🤞","🤟","🤘","🤙","👈","👉","👆","🖕","👇","☝️","👍",
-                                          "👎","✊","👊","🤛","🤜","👏","🙌","👐","🤲","🤝","🙏","✍️","💅","🤳","💪","🦾","🦿","🦵","🦶","👂",
-                                          // Hearts & symbols
-                                          "❤️","🧡","💛","💚","💙","💜","🖤","🤍","🤎","💔","❣️","💕","💞","💓","💗","💖","💘","💝","💟","☮️",
-                                          "✝️","☯️","🔥","💥","✨","🌟","⭐","💫","🎉","🎊","🎈","🎁","🏆","🥇","❓","❗","💯","🔔","🔕","🚨",
-                                          // Animals
-                                          "🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼","🐨","🐯","🦁","🐮","🐷","🐸","🐵","🙈","🙉","🙊","🐔","🐧",
-                                          // Food
-                                          "🍎","🍊","🍋","🍇","🍓","🍕","🍔","🍟","🌮","🍜","🍣","🍦","🎂","🍰","🍫","🍬","🍭","☕","🧃","🍺",
-                                          // Activities
-                                          "⚽","🏀","🏈","⚾","🎾","🏐","🎮","🎲","🎯","🎸","🎹","🎺","🎻","🥁","🎤","🎧","🎬","🎭","🎨","🖼️",
-                                        ]
-                                      : ["👍","❤️","😂","😮","😢"]
-                                    ).map((emoji) => (
-                                      <span
-                                        key={emoji}
-                                        onClick={(e) => { e.stopPropagation(); toggleReaction(msg.id, emoji, true); setReactionPickerMsgId(null); setShowAllEmojis(false); }}
-                                        style={{ fontSize: "18px", cursor: "pointer", padding: "2px 3px", borderRadius: "6px", transition: "transform 0.1s" }}
-                                        onMouseEnter={(e) => e.target.style.transform = "scale(1.3)"}
-                                        onMouseLeave={(e) => e.target.style.transform = "scale(1)"}
-                                      >{emoji}</span>
-                                    ))}
-                                    {!showAllEmojis && (
-                                      <span
-                                        onClick={(e) => { e.stopPropagation(); setShowAllEmojis(true); }}
-                                        style={{ fontSize: "14px", cursor: "pointer", padding: "2px 8px", borderRadius: "10px", background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.7)", display: "flex", alignItems: "center" }}
-                                      >+</span>
-                                    )}
-
-                                  </div>
-                                )}
                               </div>
                               {msg.reactions && Object.keys(msg.reactions).length > 0 && (
                                 <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", justifyContent: isMe ? "flex-end" : "flex-start", paddingLeft: "4px", paddingRight: "4px" }}>
