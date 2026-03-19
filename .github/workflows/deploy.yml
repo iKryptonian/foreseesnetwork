@@ -57,6 +57,10 @@ jobs:
 
       - name: Load images into Minikube
         run: |
+          # Force remove old cached images so new ones always get used
+          minikube ssh "docker rmi livechat-server:latest -f" || true
+          minikube ssh "docker rmi livechat-client:latest -f" || true
+
           minikube image load livechat-server:latest
           minikube image load livechat-client:latest
 
