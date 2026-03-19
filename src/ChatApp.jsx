@@ -67,6 +67,8 @@ export default function ChatApp({ currentUser, onLogout }) {
   const [reactionPickerMsgId, setReactionPickerMsgId] = useState(null);
   const [showAllEmojis, setShowAllEmojis] = useState(false);
   const reactionHoverTimeout = useRef(null);
+  const longPressTimeout = useRef(null);
+  const [reactionPickerPos, setReactionPickerPos] = useState({ x: 0, y: 0 });
 
   // ── Create group modal ──
   const [showCreateGroup, setShowCreateGroup] = useState(false);
@@ -651,7 +653,7 @@ export default function ChatApp({ currentUser, onLogout }) {
       username: currentUser.username,
       isGroup: !!isGroup,
     });
-    setReactionPickerMsgId(null);
+    // Keep picker open so user can add multiple reactions
   };
 
   const myRoleInGroup = groupMembers.find((m) => m.username === currentUser.username)?.role;
@@ -666,6 +668,14 @@ export default function ChatApp({ currentUser, onLogout }) {
     <div className="chat-layout" style={{ background: "#0f0f1e", fontFamily: "'Segoe UI', system-ui, sans-serif", color: "#fff", overflow: "hidden" }}>
 
       {/* ── CREATE GROUP MODAL ── */}
+      {reactionPickerMsgId && (
+        <div
+          onMouseDown={() => { setReactionPickerMsgId(null); setShowAllEmojis(false); }}
+          onTouchStart={() => { setReactionPickerMsgId(null); setShowAllEmojis(false); }}
+          style={{ position: "fixed", inset: 0, zIndex: 1999 }}
+        />
+      )}
+
       {showAddMembers && activeGroup && (
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowAddMembers(false)}>
           <div className="modal-box">
@@ -992,15 +1002,6 @@ export default function ChatApp({ currentUser, onLogout }) {
                     </div>
                   </div>
                   <div style={{ display: "flex", gap: "6px" }}>
-                    {isGroupAdmin && (
-                      <button
-                        onClick={() => setShowAddMembers(true)}
-                        style={{
-                          background: "rgba(67,233,123,0.1)", border: "1px solid rgba(67,233,123,0.3)",
-                          borderRadius: "8px", color: "#43e97b", padding: "6px 12px", cursor: "pointer", fontSize: "12px",
-                        }}
-                      >+ Add</button>
-                    )}
                     <button
                       onClick={() => setShowMembersPanel((v) => !v)}
                       style={{
@@ -1121,32 +1122,38 @@ export default function ChatApp({ currentUser, onLogout }) {
                                   cursor: "pointer",
                                   position: "relative",
                                 }}
-                                onMouseEnter={() => {
+                                onMouseDown={(e) => {
                                   if (msg.optimistic) return;
-                                  clearTimeout(reactionHoverTimeout.current);
-                                  setReactionPickerMsgId(msg.id);
-                                  setShowAllEmojis(false);
-                                }}
-                                onMouseLeave={() => {
-                                  reactionHoverTimeout.current = setTimeout(() => {
-                                    setReactionPickerMsgId(null);
+                                  longPressTimeout.current = setTimeout(() => {
+                                    const rect = e.currentTarget.getBoundingClientRect();
+                                    setReactionPickerPos({ x: rect.left, y: rect.top });
+                                    setReactionPickerMsgId(msg.id);
                                     setShowAllEmojis(false);
-                                  }, 400);
+                                  }, 500);
                                 }}
+                                onMouseUp={() => clearTimeout(longPressTimeout.current)}
+                                onMouseLeave={() => clearTimeout(longPressTimeout.current)}
+                                onTouchStart={(e) => {
+                                  if (msg.optimistic) return;
+                                  const touch = e.touches[0];
+                                  longPressTimeout.current = setTimeout(() => {
+                                    setReactionPickerPos({ x: touch.clientX, y: touch.clientY });
+                                    setReactionPickerMsgId(msg.id);
+                                    setShowAllEmojis(false);
+                                  }, 500);
+                                }}
+                                onTouchEnd={() => clearTimeout(longPressTimeout.current)}
                               >
                                 {msg.text}
                                 {reactionPickerMsgId === msg.id && (
                                   <div
-                                    onMouseEnter={() => clearTimeout(reactionHoverTimeout.current)}
-                                    onMouseLeave={() => {
-                                      reactionHoverTimeout.current = setTimeout(() => {
-                                        setReactionPickerMsgId(null);
-                                        setShowAllEmojis(false);
-                                      }, 400);
-                                    }}
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    onTouchStart={(e) => e.stopPropagation()}
+                                    onWheel={(e) => e.stopPropagation()}
                                     style={{
                                       position: "fixed",
-                                      bottom: "auto",
+                                      top: Math.max(10, reactionPickerPos.y - (showAllEmojis ? 220 : 60)),
+                                      left: Math.min(Math.max(10, reactionPickerPos.x - 10), window.innerWidth - (showAllEmojis ? 330 : 220)),
                                       background: "#1e1e3a",
                                       border: "1px solid rgba(255,255,255,0.15)",
                                       borderRadius: "16px",
@@ -1154,14 +1161,11 @@ export default function ChatApp({ currentUser, onLogout }) {
                                       display: "flex",
                                       flexWrap: "wrap",
                                       gap: "4px",
-                                      zIndex: 1000,
-                                      boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+                                      zIndex: 2000,
+                                      boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
                                       width: showAllEmojis ? "min(320px, 90vw)" : "auto",
                                       maxHeight: showAllEmojis ? "min(200px, 40vh)" : "none",
                                       overflowY: showAllEmojis ? "auto" : "visible",
-                                      transform: "translateY(-120%)",
-                                      left: isMe ? "auto" : "10px",
-                                      right: isMe ? "10px" : "auto",
                                     }}
                                   >
                                     {(showAllEmojis
@@ -1189,7 +1193,7 @@ export default function ChatApp({ currentUser, onLogout }) {
                                     ).map((emoji) => (
                                       <span
                                         key={emoji}
-                                        onClick={(e) => { e.stopPropagation(); toggleReaction(msg.id, emoji, true); }}
+                                        onClick={(e) => { e.stopPropagation(); toggleReaction(msg.id, emoji, true); setReactionPickerMsgId(null); setShowAllEmojis(false); }}
                                         style={{ fontSize: "18px", cursor: "pointer", padding: "2px 3px", borderRadius: "6px", transition: "transform 0.1s" }}
                                         onMouseEnter={(e) => e.target.style.transform = "scale(1.3)"}
                                         onMouseLeave={(e) => e.target.style.transform = "scale(1)"}
@@ -1198,9 +1202,13 @@ export default function ChatApp({ currentUser, onLogout }) {
                                     {!showAllEmojis && (
                                       <span
                                         onClick={(e) => { e.stopPropagation(); setShowAllEmojis(true); }}
-                                        style={{ fontSize: "14px", cursor: "pointer", padding: "2px 6px", borderRadius: "10px", background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.7)", display: "flex", alignItems: "center" }}
+                                        style={{ fontSize: "14px", cursor: "pointer", padding: "2px 8px", borderRadius: "10px", background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.7)", display: "flex", alignItems: "center" }}
                                       >+</span>
                                     )}
+                                    <span
+                                      onClick={(e) => { e.stopPropagation(); setReactionPickerMsgId(null); setShowAllEmojis(false); }}
+                                      style={{ fontSize: "14px", cursor: "pointer", padding: "2px 8px", borderRadius: "10px", background: "rgba(245,87,108,0.15)", color: "#f5576c", display: "flex", alignItems: "center" }}
+                                    >✕</span>
                                   </div>
                                 )}
                               </div>
@@ -1260,8 +1268,14 @@ export default function ChatApp({ currentUser, onLogout }) {
                   background: "#13132a", display: "flex", flexDirection: "column",
                   flexShrink: 0, overflowY: "auto",
                 }}>
-                  <div style={{ padding: "14px 16px", borderBottom: "1px solid rgba(255,255,255,0.07)", fontSize: "12px", fontWeight: 700, color: "rgba(255,255,255,0.4)", letterSpacing: "0.5px" }}>
-                    MEMBERS ({groupMembers.length})
+                  <div style={{ padding: "14px 16px", borderBottom: "1px solid rgba(255,255,255,0.07)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <span style={{ fontSize: "12px", fontWeight: 700, color: "rgba(255,255,255,0.4)", letterSpacing: "0.5px" }}>MEMBERS ({groupMembers.length})</span>
+                    {isGroupAdmin && (
+                      <button
+                        onClick={() => setShowAddMembers(true)}
+                        style={{ background: "rgba(67,233,123,0.15)", border: "1px solid rgba(67,233,123,0.3)", borderRadius: "6px", color: "#43e97b", padding: "3px 8px", cursor: "pointer", fontSize: "11px", fontWeight: 700 }}
+                      >+ Add</button>
+                    )}
                   </div>
                   {groupMembers.map((m) => (
                     <div key={m.username} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 14px" }}>
