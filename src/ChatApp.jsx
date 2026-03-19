@@ -1211,10 +1211,7 @@ export default function ChatApp({ currentUser, onLogout }) {
                                         style={{ fontSize: "14px", cursor: "pointer", padding: "2px 8px", borderRadius: "10px", background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.7)", display: "flex", alignItems: "center" }}
                                       >+</span>
                                     )}
-                                    <span
-                                      onClick={(e) => { e.stopPropagation(); setReactionPickerMsgId(null); setShowAllEmojis(false); }}
-                                      style={{ fontSize: "14px", cursor: "pointer", padding: "2px 8px", borderRadius: "10px", background: "rgba(245,87,108,0.15)", color: "#f5576c", display: "flex", alignItems: "center" }}
-                                    >✕</span>
+
                                   </div>
                                 )}
                               </div>
