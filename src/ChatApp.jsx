@@ -1124,25 +1124,31 @@ export default function ChatApp({ currentUser, onLogout }) {
                                 }}
                                 onMouseDown={(e) => {
                                   if (msg.optimistic) return;
+                                  const x = e.clientX;
+                                  const y = e.clientY;
                                   longPressTimeout.current = setTimeout(() => {
-                                    const rect = e.currentTarget.getBoundingClientRect();
-                                    setReactionPickerPos({ x: rect.left, y: rect.top });
+                                    setReactionPickerPos({ x, y });
                                     setReactionPickerMsgId(msg.id);
                                     setShowAllEmojis(false);
                                   }, 500);
                                 }}
-                                onMouseUp={() => clearTimeout(longPressTimeout.current)}
+                                onMouseUp={(e) => {
+                                  clearTimeout(longPressTimeout.current);
+                                }}
                                 onMouseLeave={() => clearTimeout(longPressTimeout.current)}
                                 onTouchStart={(e) => {
                                   if (msg.optimistic) return;
-                                  const touch = e.touches[0];
+                                  e.preventDefault();
+                                  const x = e.touches[0].clientX;
+                                  const y = e.touches[0].clientY;
                                   longPressTimeout.current = setTimeout(() => {
-                                    setReactionPickerPos({ x: touch.clientX, y: touch.clientY });
+                                    setReactionPickerPos({ x, y });
                                     setReactionPickerMsgId(msg.id);
                                     setShowAllEmojis(false);
                                   }, 500);
                                 }}
                                 onTouchEnd={() => clearTimeout(longPressTimeout.current)}
+                                onContextMenu={(e) => e.preventDefault()}
                               >
                                 {msg.text}
                                 {reactionPickerMsgId === msg.id && (
