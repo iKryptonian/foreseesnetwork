@@ -854,20 +854,6 @@ minikube stop
 
 ---
 
-## 🗺️ Roadmap
-
-- [ ] Phase 6 — Migrate to AWS (EKS + ECR + RDS + ElastiCache)
-- [ ] Phase 7 — Staging + Production environments
-- [ ] VPA for PostgreSQL and Redis
-- [ ] ELK stack for centralized logging
-- [ ] SSL/HTTPS with cert-manager
-- [ ] Rate limiting in Nginx
-- [ ] Group chat support
-- [ ] File/image sharing
-- [ ] Message reactions
-
----
-
 ## 👤 Author
 
 **Nivash** (iKryptonian)

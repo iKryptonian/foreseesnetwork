@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { socket } from "./socket"; // shared instance
+import { socket } from "./socket";
 
 if (!document.getElementById("chatapp-styles")) {
   const style = document.createElement("style");
@@ -27,15 +27,50 @@ if (!document.getElementById("chatapp-styles")) {
     }
     input::placeholder { color: rgba(255,255,255,0.3); }
     .user-item:hover { background: rgba(255,255,255,0.04) !important; }
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 1000; padding: 16px;
+    }
+    .modal-box {
+      background: #1a1a35; border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 16px; padding: 24px; width: 100%; max-width: 420px;
+      max-height: 80vh; overflow-y: auto;
+    }
+    .member-pick:hover { background: rgba(255,255,255,0.08) !important; }
+    .tab-btn { transition: all 0.2s; }
+    .tab-btn:hover { opacity: 0.8; }
   `;
   document.head.appendChild(style);
 }
 
 export default function ChatApp({ currentUser, onLogout }) {
+  // ── 1-on-1 chat state ──
   const [activeChatUser, setActiveChatUser] = useState(null);
+  const [messages, setMessages] = useState([]);
   const [hasMore, setHasMore] = useState(false);
   const [msgOffset, setMsgOffset] = useState(0);
-  const [messages, setMessages] = useState([]);
+
+  // ── Group chat state ──
+  const [activeGroup, setActiveGroup] = useState(null);
+  const [groupMessages, setGroupMessages] = useState([]);
+  const [groupHasMore, setGroupHasMore] = useState(false);
+  const [groupMsgOffset, setGroupMsgOffset] = useState(0);
+  const [myGroups, setMyGroups] = useState([]);
+  const [groupMembers, setGroupMembers] = useState([]);
+  const [showMembersPanel, setShowMembersPanel] = useState(false);
+  const [groupTypingUsers, setGroupTypingUsers] = useState({});
+
+  // ── Create group modal ──
+  const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [newGroupName, setNewGroupName] = useState("");
+  const [selectedMembers, setSelectedMembers] = useState([]);
+  const [creatingGroup, setCreatingGroup] = useState(false);
+
+  // ── Sidebar tab: "chats" | "groups" ──
+  const [sidebarTab, setSidebarTab] = useState("chats");
+
+  // ── Common state ──
   const [input, setInput] = useState("");
   const [search, setSearch] = useState("");
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -44,10 +79,12 @@ export default function ChatApp({ currentUser, onLogout }) {
   const [onlineUsers, setOnlineUsers] = useState({});
   const [typingUsers, setTypingUsers] = useState({});
   const [lastMessages, setLastMessages] = useState({});
+
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
   const typingTimeout = useRef(null);
   const activeChatUserRef = useRef(null);
+  const activeGroupRef = useRef(null);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth <= 768);
@@ -55,45 +92,35 @@ export default function ChatApp({ currentUser, onLogout }) {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  useEffect(() => {
-    activeChatUserRef.current = activeChatUser;
-  }, [activeChatUser]);
+  useEffect(() => { activeChatUserRef.current = activeChatUser; }, [activeChatUser]);
+  useEffect(() => { activeGroupRef.current = activeGroup; }, [activeGroup]);
 
+  // ── SOCKET SETUP ──
   useEffect(() => {
-    // Reconnect if socket was disconnected (e.g. after logout)
     if (!socket.connected) socket.connect();
-
-    // Register with server
     socket.emit("join", currentUser.username);
 
-    // Re-register after reconnect (tab sleep, network blip)
     socket.on("connect", () => {
       socket.emit("join", currentUser.username);
     });
 
-    // Heartbeat every 30s
     const heartbeat = setInterval(() => {
       socket.emit("heartbeat");
     }, 5000);
 
-    // ── RECEIVE MESSAGE (with ACK) ──
+    // ── 1-on-1 message received ──
     socket.on("receive_message", (msg, ack) => {
-      // Send ACK back to server immediately
       if (typeof ack === "function") ack(true);
 
       const isFromMe = (msg.from_user || msg.from) === currentUser.username;
-      const otherUser = isFromMe
-        ? (msg.to_user || msg.to)
-        : (msg.from_user || msg.from);
+      const otherUser = isFromMe ? (msg.to_user || msg.to) : (msg.from_user || msg.from);
       const chatKey = [currentUser.username, otherUser].sort().join("_");
-
       const activeChatKey = activeChatUserRef.current
         ? [currentUser.username, activeChatUserRef.current.username].sort().join("_")
         : null;
 
       if (chatKey === activeChatKey) {
         setMessages((prev) => {
-          // Replace optimistic message if it matches, or add if new
           const optimisticIdx = prev.findIndex(
             (m) => m.optimistic && m.text === msg.text && (m.from_user || m.from) === (msg.from_user || msg.from)
           );
@@ -105,41 +132,28 @@ export default function ChatApp({ currentUser, onLogout }) {
           if (prev.some((m) => m.id === msg.id)) return prev;
           return [...prev, msg];
         });
-
         if (!isFromMe) {
-          socket.emit("mark_read", {
-            from: msg.from_user || msg.from,
-            to: currentUser.username,
-          });
+          socket.emit("mark_read", { from: msg.from_user || msg.from, to: currentUser.username });
         }
       }
 
       setLastMessages((prev) => ({ ...prev, [chatKey]: msg }));
       setAllUsers((prev) => {
-        const otherUsername = isFromMe ? (msg.to_user || msg.to) : (msg.from_user || msg.from);
-        const exists = prev.find((u) => u.username === otherUsername);
-        if (exists) {
-          return [exists, ...prev.filter((u) => u.username !== otherUsername)];
-        }
-        return [{ username: otherUsername, avatar: otherUsername[0].toUpperCase() }, ...prev];
+        const exists = prev.find((u) => u.username === otherUser);
+        if (exists) return [exists, ...prev.filter((u) => u.username !== otherUser)];
+        return [{ username: otherUser, avatar: otherUser[0].toUpperCase() }, ...prev];
       });
     });
 
-    // ── MESSAGE DELIVERED (update tick) ──
     socket.on("message_delivered", ({ id }) => {
-      setMessages((prev) =>
-        prev.map((m) => (m.id === id ? { ...m, status: "delivered" } : m))
-      );
+      setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, status: "delivered" } : m)));
     });
 
-    // ── MESSAGES READ ──
     socket.on("messages_read", ({ by }) => {
       setMessages((prev) =>
         prev.map((msg) =>
-          (msg.from_user || msg.from) === currentUser.username &&
-          (msg.to_user || msg.to) === by
-            ? { ...msg, status: "read" }
-            : msg
+          (msg.from_user || msg.from) === currentUser.username && (msg.to_user || msg.to) === by
+            ? { ...msg, status: "read" } : msg
         )
       );
     });
@@ -149,21 +163,62 @@ export default function ChatApp({ currentUser, onLogout }) {
       list.forEach((u) => { map[u] = true; });
       setOnlineUsers(map);
     });
+    socket.on("user_online", (username) => setOnlineUsers((p) => ({ ...p, [username]: true })));
+    socket.on("user_offline", (username) => setOnlineUsers((p) => ({ ...p, [username]: false })));
+    socket.on("typing", ({ from }) => setTypingUsers((p) => ({ ...p, [from]: true })));
+    socket.on("stop_typing", ({ from }) => setTypingUsers((p) => ({ ...p, [from]: false })));
 
-    socket.on("user_online", (username) => {
-      setOnlineUsers((prev) => ({ ...prev, [username]: true }));
+    // ── GROUP EVENTS ──
+    socket.on("group_created", (group) => {
+      setMyGroups((prev) => {
+        if (prev.find((g) => g.id === group.id)) return prev;
+        return [group, ...prev];
+      });
     });
 
-    socket.on("user_offline", (username) => {
-      setOnlineUsers((prev) => ({ ...prev, [username]: false }));
+    socket.on("receive_group_message", (msg) => {
+      // Update last message preview in sidebar
+      setMyGroups((prev) =>
+        prev.map((g) =>
+          g.id === msg.group_id
+            ? { ...g, last_message: msg.text, last_message_from: msg.from_user, last_message_at: msg.created_at }
+            : g
+        )
+      );
+
+      if (activeGroupRef.current?.id === msg.group_id) {
+        setGroupMessages((prev) => {
+          const optimisticIdx = prev.findIndex(
+            (m) => m.optimistic && m.text === msg.text && m.from_user === msg.from_user
+          );
+          if (optimisticIdx !== -1) {
+            const updated = [...prev];
+            updated[optimisticIdx] = msg;
+            return updated;
+          }
+          if (prev.some((m) => m.id === msg.id)) return prev;
+          return [...prev, msg];
+        });
+      }
     });
 
-    socket.on("typing", ({ from }) => {
-      setTypingUsers((prev) => ({ ...prev, [from]: true }));
+    socket.on("group_role_updated", ({ groupId, username, role, promotedBy }) => {
+      setGroupMembers((prev) =>
+        prev.map((m) => m.username === username ? { ...m, role } : m)
+      );
     });
 
-    socket.on("stop_typing", ({ from }) => {
-      setTypingUsers((prev) => ({ ...prev, [from]: false }));
+    socket.on("group_typing", ({ from, groupId }) => {
+      if (activeGroupRef.current?.id === groupId) {
+        setGroupTypingUsers((p) => ({ ...p, [from]: true }));
+      }
+    });
+    socket.on("group_stop_typing", ({ from, groupId }) => {
+      setGroupTypingUsers((p) => ({ ...p, [from]: false }));
+    });
+
+    socket.on("group_error", ({ message }) => {
+      alert(message);
     });
 
     return () => {
@@ -177,29 +232,32 @@ export default function ChatApp({ currentUser, onLogout }) {
       socket.off("user_offline");
       socket.off("typing");
       socket.off("stop_typing");
+      socket.off("group_created");
+      socket.off("receive_group_message");
+      socket.off("group_role_updated");
+      socket.off("group_typing");
+      socket.off("group_stop_typing");
+      socket.off("group_error");
     };
   }, []);
 
+  // ── LOAD USERS + RECENT CHATS ──
   useEffect(() => {
-    // Load ALL users for search
     fetch(`${import.meta.env.VITE_API_URL}/api/users`)
       .then((r) => r.json())
       .then((data) => {
         const others = data.users.filter((u) => u.username !== currentUser.username);
-        // Load recent chats to sort sidebar
         fetch(`${import.meta.env.VITE_API_URL}/api/recent-chats/${currentUser.username}`)
           .then((r) => r.json())
           .then((rc) => {
             const recentUsernames = (rc.chats || [])
               .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
               .map((c) => c.other_user);
-            // Sort: recent chats first, then rest
             const sorted = [
               ...recentUsernames.map((u) => others.find((x) => x.username === u)).filter(Boolean),
               ...others.filter((u) => !recentUsernames.includes(u.username)),
             ];
             setAllUsers(sorted);
-            // Populate lastMessages
             const lm = {};
             (rc.chats || []).forEach((c) => {
               const key = [currentUser.username, c.other_user].sort().join("_");
@@ -208,15 +266,69 @@ export default function ChatApp({ currentUser, onLogout }) {
             setLastMessages(lm);
           });
       });
+
+    // Load my groups
+    fetch(`${import.meta.env.VITE_API_URL}/api/groups/user/${currentUser.username}`)
+      .then((r) => r.json())
+      .then((data) => setMyGroups(data.groups || []));
   }, []);
 
+  // ── HELPERS ──
   const filteredUsers = allUsers.filter((u) =>
     u.username.toLowerCase().includes(search.toLowerCase())
+  );
+  const filteredGroups = myGroups.filter((g) =>
+    g.name.toLowerCase().includes(search.toLowerCase())
   );
 
   const getChatKey = (a, b) => [a, b].sort().join("_");
 
+  const avatarColor = (name) => {
+    const colors = ["#667eea", "#f5576c", "#f093fb", "#4facfe", "#43e97b", "#fa709a", "#f6d365"];
+    let h = 0;
+    for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
+    return colors[Math.abs(h) % colors.length];
+  };
+
+  const formatTime = (msg) => {
+    if (!msg.created_at) return msg.time;
+    const date = new Date(msg.created_at);
+    if (isNaN(date)) return msg.time;
+    const now = new Date();
+    const toDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const diffDays = Math.round((toDay(now) - toDay(date)) / 86400000);
+    const timeStr = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    if (diffDays === 0) return timeStr;
+    if (diffDays === 1) return `Yesterday ${timeStr}`;
+    if (diffDays <= 6) return `${date.toLocaleDateString([], { weekday: "long" })} ${timeStr}`;
+    return `${date.toLocaleDateString([], { day: "2-digit", month: "2-digit", year: "numeric" })} ${timeStr}`;
+  };
+
+  const statusTick = (status) => {
+    if (status === "failed") return <span style={{ color: "#f5576c", fontSize: "11px" }}>✕</span>;
+    if (status === "read") return <span style={{ color: "#43e97b", fontSize: "11px", fontWeight: 700 }}>✓✓</span>;
+    if (status === "delivered") return <span style={{ color: "rgba(255,255,255,0.6)", fontSize: "11px", fontWeight: 700 }}>✓✓</span>;
+    return <span style={{ color: "rgba(255,255,255,0.3)", fontSize: "11px", fontWeight: 700 }}>✓</span>;
+  };
+
+  const lastMsg = (user) => {
+    const key = getChatKey(currentUser.username, user.username);
+    const msg = lastMessages[key];
+    if (!msg) return "Click to start chatting";
+    return ((msg.from_user || msg.from) === currentUser.username ? "You: " : "") + msg.text;
+  };
+
+  const groupLastMsg = (group) => {
+    if (!group.last_message) return "No messages yet";
+    const prefix = group.last_message_from === currentUser.username ? "You: " : `${group.last_message_from}: `;
+    return prefix + group.last_message;
+  };
+
+  // ── OPEN 1-ON-1 CHAT ──
   const openChat = async (user) => {
+    setActiveGroup(null);
+    setGroupMessages([]);
+    setShowMembersPanel(false);
     setActiveChatUser(user);
     setInput("");
     setMsgOffset(0);
@@ -227,11 +339,37 @@ export default function ChatApp({ currentUser, onLogout }) {
       const data = await res.json();
       setMessages(data.messages || []);
       setHasMore(data.hasMore || false);
-    } catch {
-      setMessages([]);
-    }
+    } catch { setMessages([]); }
 
     socket.emit("mark_read", { from: user.username, to: currentUser.username });
+    setTimeout(() => inputRef.current?.focus(), 100);
+  };
+
+  // ── OPEN GROUP CHAT ──
+  const openGroup = async (group) => {
+    setActiveChatUser(null);
+    setMessages([]);
+    setShowMembersPanel(false);
+    setActiveGroup(group);
+    setInput("");
+    setGroupMsgOffset(0);
+    setGroupHasMore(false);
+
+    try {
+      const [msgRes, memRes] = await Promise.all([
+        fetch(`${import.meta.env.VITE_API_URL}/api/groups/${group.id}/messages?offset=0`),
+        fetch(`${import.meta.env.VITE_API_URL}/api/groups/${group.id}/members`),
+      ]);
+      const msgData = await msgRes.json();
+      const memData = await memRes.json();
+      setGroupMessages(msgData.messages || []);
+      setGroupHasMore(msgData.hasMore || false);
+      setGroupMembers(memData.members || []);
+    } catch {
+      setGroupMessages([]);
+      setGroupMembers([]);
+    }
+
     setTimeout(() => inputRef.current?.focus(), 100);
   };
 
@@ -240,21 +378,34 @@ export default function ChatApp({ currentUser, onLogout }) {
     try {
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/messages/${currentUser.username}/${activeChatUser.username}?offset=${newOffset}`);
       const data = await res.json();
-      const older = data.messages || [];
-      setMessages((prev) => [...older, ...prev]); // prepend older messages
+      setMessages((prev) => [...(data.messages || []), ...prev]);
       setHasMore(data.hasMore || false);
       setMsgOffset(newOffset);
     } catch {}
   };
 
+  const loadMoreGroup = async () => {
+    const newOffset = groupMsgOffset + 50;
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/groups/${activeGroup.id}/messages?offset=${newOffset}`);
+      const data = await res.json();
+      setGroupMessages((prev) => [...(data.messages || []), ...prev]);
+      setGroupHasMore(data.hasMore || false);
+      setGroupMsgOffset(newOffset);
+    } catch {}
+  };
+
   const closeChat = () => {
     setActiveChatUser(null);
+    setActiveGroup(null);
     setMessages([]);
+    setGroupMessages([]);
+    setShowMembersPanel(false);
   };
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, groupMessages]);
 
   useEffect(() => {
     const handler = (e) => {
@@ -264,51 +415,69 @@ export default function ChatApp({ currentUser, onLogout }) {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  // ── SEND MESSAGE ──
   const sendMessage = () => {
     const text = input.trim();
-    if (!text || !activeChatUser) return;
-
+    if (!text) return;
     const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
-    // ── OPTIMISTIC UI — show message instantly ──
-    const optimisticMsg = {
-      optimistic: true,
-      from_user: currentUser.username,
-      to_user: activeChatUser.username,
-      text,
-      time,
-      status: "sent",
-      id: `temp_${Date.now()}`,
-    };
-    setMessages((prev) => [...prev, optimisticMsg]);
-    setInput("");
+    if (activeChatUser) {
+      const optimisticMsg = {
+        optimistic: true,
+        from_user: currentUser.username,
+        to_user: activeChatUser.username,
+        text, time, status: "sent",
+        id: `temp_${Date.now()}`,
+      };
+      setMessages((prev) => [...prev, optimisticMsg]);
+      setInput("");
 
-    // ── SEND WITH ACK ──
-    socket.emit(
-      "send_message",
-      { from: currentUser.username, to: activeChatUser.username, text, time },
-      (response) => {
-        if (response?.status === "saved" && response.msg) {
-          // Replace optimistic message with real saved message
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === optimisticMsg.id ? response.msg : m
-            )
-          );
-          const chatKey = getChatKey(currentUser.username, activeChatUser.username);
-          setLastMessages((prev) => ({ ...prev, [chatKey]: response.msg }));
-        } else if (response?.status === "error") {
-          // Mark as failed
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === optimisticMsg.id ? { ...m, status: "failed" } : m
-            )
-          );
+      socket.emit("send_message",
+        { from: currentUser.username, to: activeChatUser.username, text, time },
+        (response) => {
+          if (response?.status === "saved" && response.msg) {
+            setMessages((prev) => prev.map((m) => m.id === optimisticMsg.id ? response.msg : m));
+            const chatKey = getChatKey(currentUser.username, activeChatUser.username);
+            setLastMessages((prev) => ({ ...prev, [chatKey]: response.msg }));
+          } else if (response?.status === "error") {
+            setMessages((prev) => prev.map((m) => m.id === optimisticMsg.id ? { ...m, status: "failed" } : m));
+          }
         }
-      }
-    );
+      );
 
-    socket.emit("stop_typing", { from: currentUser.username, to: activeChatUser.username });
+      socket.emit("stop_typing", { from: currentUser.username, to: activeChatUser.username });
+    } else if (activeGroup) {
+      const optimisticMsg = {
+        optimistic: true,
+        group_id: activeGroup.id,
+        from_user: currentUser.username,
+        text, time, status: "sent",
+        id: `temp_${Date.now()}`,
+        created_at: new Date().toISOString(),
+      };
+      setGroupMessages((prev) => [...prev, optimisticMsg]);
+      setInput("");
+
+      socket.emit("send_group_message",
+        { groupId: activeGroup.id, from: currentUser.username, text, time },
+        (response) => {
+          if (response?.status === "saved" && response.msg) {
+            setGroupMessages((prev) => prev.map((m) => m.id === optimisticMsg.id ? response.msg : m));
+            setMyGroups((prev) =>
+              prev.map((g) =>
+                g.id === activeGroup.id
+                  ? { ...g, last_message: text, last_message_from: currentUser.username }
+                  : g
+              )
+            );
+          } else if (response?.status === "error") {
+            setGroupMessages((prev) => prev.map((m) => m.id === optimisticMsg.id ? { ...m, status: "failed" } : m));
+          }
+        }
+      );
+
+      socket.emit("group_stop_typing", { from: currentUser.username, groupId: activeGroup.id });
+    }
   };
 
   const handleKey = (e) => {
@@ -317,61 +486,149 @@ export default function ChatApp({ currentUser, onLogout }) {
 
   const handleInputChange = (e) => {
     setInput(e.target.value);
-    if (!activeChatUser) return;
-    socket.emit("typing", { from: currentUser.username, to: activeChatUser.username });
-    clearTimeout(typingTimeout.current);
-    typingTimeout.current = setTimeout(() => {
-      socket.emit("stop_typing", { from: currentUser.username, to: activeChatUser.username });
-    }, 1500);
+    if (activeChatUser) {
+      socket.emit("typing", { from: currentUser.username, to: activeChatUser.username });
+      clearTimeout(typingTimeout.current);
+      typingTimeout.current = setTimeout(() => {
+        socket.emit("stop_typing", { from: currentUser.username, to: activeChatUser.username });
+      }, 1500);
+    } else if (activeGroup) {
+      socket.emit("group_typing", { from: currentUser.username, groupId: activeGroup.id });
+      clearTimeout(typingTimeout.current);
+      typingTimeout.current = setTimeout(() => {
+        socket.emit("group_stop_typing", { from: currentUser.username, groupId: activeGroup.id });
+      }, 1500);
+    }
   };
 
-  const avatarColor = (name) => {
-    const colors = ["#667eea", "#f5576c", "#f093fb", "#4facfe", "#43e97b", "#fa709a", "#f6d365"];
-    let h = 0;
-    for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
-    return colors[Math.abs(h) % colors.length];
+  // ── CREATE GROUP ──
+  const createGroup = async () => {
+    if (!newGroupName.trim()) return;
+    setCreatingGroup(true);
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/groups`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newGroupName.trim(),
+          createdBy: currentUser.username,
+          members: selectedMembers,
+        }),
+      });
+      const data = await res.json();
+      if (data.group) {
+        setShowCreateGroup(false);
+        setNewGroupName("");
+        setSelectedMembers([]);
+        setSidebarTab("groups");
+        openGroup(data.group);
+      }
+    } catch (err) {
+      console.error("Create group error:", err);
+    } finally {
+      setCreatingGroup(false);
+    }
   };
 
-  const lastMsg = (user) => {
-    const key = getChatKey(currentUser.username, user.username);
-    const msg = lastMessages[key];
-    if (!msg) return "Click to start chatting";
-    return ((msg.from_user || msg.from) === currentUser.username ? "You: " : "") + msg.text;
+  const toggleMember = (username) => {
+    setSelectedMembers((prev) =>
+      prev.includes(username) ? prev.filter((u) => u !== username) : [...prev, username]
+    );
   };
 
-  const formatTime = (msg) => {
-    if (!msg.created_at) return msg.time;
-  
-    const date = new Date(msg.created_at);
-    if (isNaN(date)) return msg.time;
-
-    const now = new Date();
-    const toDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
-
-    const msgDay = toDay(date);
-    const todayDay = toDay(now);
-    const diffDays = Math.round((todayDay - msgDay) / 86400000);
-
-    const timeStr = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-
-    if (diffDays === 0) return timeStr;
-    if (diffDays === 1) return `Yesterday ${timeStr}`;
-    if (diffDays <= 6) return `${date.toLocaleDateString([], { weekday: "long" })} ${timeStr}`;
-   return `${date.toLocaleDateString([], { day: "2-digit", month: "2-digit", year: "numeric" })} ${timeStr}`;
+  // ── PROMOTE TO ADMIN ──
+  const promoteToAdmin = (targetUser) => {
+    socket.emit("make_admin", {
+      groupId: activeGroup.id,
+      targetUser,
+      requestedBy: currentUser.username,
+    });
   };
 
-  const statusTick = (status) => {
-    if (status === "failed") return <span style={{ color: "#f5576c", fontSize: "11px" }}>✕</span>;
-    if (status === "read") return <span style={{ color: "#43e97b", fontSize: "11px", fontWeight: 700 }}>✓✓</span>;
-    if (status === "delivered") return <span style={{ color: "rgba(255,255,255,0.6)", fontSize: "11px", fontWeight: 700 }}>✓✓</span>;
-    return <span style={{ color: "rgba(255,255,255,0.3)", fontSize: "11px", fontWeight: 700 }}>✓</span>;
-  };
+  const myRoleInGroup = groupMembers.find((m) => m.username === currentUser.username)?.role;
+  const isGroupAdmin = myRoleInGroup === "admin";
 
-  const sidebarClass = `chat-sidebar${isMobile && activeChatUser ? " hidden" : ""}`;
-  const windowClass = `chat-window${!isMobile || activeChatUser ? " visible" : ""}`;
+  const sidebarClass = `chat-sidebar${isMobile && (activeChatUser || activeGroup) ? " hidden" : ""}`;
+  const windowClass = `chat-window${!isMobile || activeChatUser || activeGroup ? " visible" : ""}`;
+  const activeChat = activeChatUser || activeGroup;
 
   return (
     <div className="chat-layout" style={{ background: "#0f0f1e", fontFamily: "'Segoe UI', system-ui, sans-serif", color: "#fff", overflow: "hidden" }}>
+
+      {/* ── CREATE GROUP MODAL ── */}
+      {showCreateGroup && (
+        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowCreateGroup(false)}>
+          <div className="modal-box">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+              <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700 }}>Create New Group</h3>
+              <button onClick={() => setShowCreateGroup(false)} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.4)", fontSize: "18px", cursor: "pointer" }}>✕</button>
+            </div>
+
+            <div style={{ marginBottom: "16px" }}>
+              <label style={{ fontSize: "12px", color: "rgba(255,255,255,0.5)", marginBottom: "6px", display: "block" }}>GROUP NAME</label>
+              <input
+                style={{ ...c.input, width: "100%", boxSizing: "border-box" }}
+                placeholder="e.g. Project Alpha, Dev Team..."
+                value={newGroupName}
+                onChange={(e) => setNewGroupName(e.target.value)}
+                maxLength={100}
+                autoFocus
+              />
+            </div>
+
+            <div style={{ marginBottom: "20px" }}>
+              <label style={{ fontSize: "12px", color: "rgba(255,255,255,0.5)", marginBottom: "8px", display: "block" }}>
+                ADD MEMBERS ({selectedMembers.length} selected)
+              </label>
+              <div style={{ maxHeight: "220px", overflowY: "auto", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.08)" }}>
+                {allUsers.map((u) => {
+                  const selected = selectedMembers.includes(u.username);
+                  return (
+                    <div
+                      key={u.username}
+                      className="member-pick"
+                      onClick={() => toggleMember(u.username)}
+                      style={{
+                        display: "flex", alignItems: "center", gap: "10px",
+                        padding: "10px 14px", cursor: "pointer",
+                        background: selected ? "rgba(102,126,234,0.15)" : "transparent",
+                      }}
+                    >
+                      <div style={{ ...c.itemAvatar, width: "34px", height: "34px", fontSize: "13px", background: avatarColor(u.username), flexShrink: 0 }}>
+                        {u.username[0].toUpperCase()}
+                      </div>
+                      <span style={{ flex: 1, fontSize: "14px" }}>@{u.username}</span>
+                      <div style={{
+                        width: "18px", height: "18px", borderRadius: "50%",
+                        border: `2px solid ${selected ? "#667eea" : "rgba(255,255,255,0.2)"}`,
+                        background: selected ? "#667eea" : "transparent",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: "11px", flexShrink: 0,
+                      }}>
+                        {selected && "✓"}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <button
+              onClick={createGroup}
+              disabled={!newGroupName.trim() || creatingGroup}
+              style={{
+                width: "100%", padding: "12px",
+                background: newGroupName.trim() ? "linear-gradient(135deg, #667eea, #764ba2)" : "rgba(255,255,255,0.1)",
+                border: "none", borderRadius: "10px", color: "#fff",
+                fontSize: "14px", fontWeight: 700, cursor: newGroupName.trim() ? "pointer" : "not-allowed",
+              }}
+            >
+              {creatingGroup ? "Creating..." : `Create Group${selectedMembers.length > 0 ? ` with ${selectedMembers.length + 1} members` : ""}`}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── SIDEBAR ── */}
       <div className={sidebarClass}>
         <div style={c.sideHeader}>
@@ -398,166 +655,372 @@ export default function ChatApp({ currentUser, onLogout }) {
           </div>
         </div>
 
+        {/* ── TABS ── */}
+        <div style={{ display: "flex", borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
+          {["chats", "groups"].map((tab) => (
+            <button
+              key={tab}
+              className="tab-btn"
+              onClick={() => setSidebarTab(tab)}
+              style={{
+                flex: 1, padding: "10px", background: "none", border: "none",
+                color: sidebarTab === tab ? "#667eea" : "rgba(255,255,255,0.35)",
+                fontSize: "13px", fontWeight: 700, cursor: "pointer",
+                borderBottom: sidebarTab === tab ? "2px solid #667eea" : "2px solid transparent",
+                textTransform: "capitalize",
+              }}
+            >
+              {tab === "groups" ? `👥 Groups (${myGroups.length})` : "💬 Chats"}
+            </button>
+          ))}
+        </div>
+
+        {/* ── SEARCH ── */}
         <div style={c.searchWrap}>
           <span style={c.searchIcon}>🔍</span>
           <input
             style={c.searchInput}
-            placeholder="Search users…"
+            placeholder={sidebarTab === "groups" ? "Search groups…" : "Search users…"}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
           {search && <button style={c.clearSearch} onClick={() => setSearch("")} type="button">✕</button>}
         </div>
 
-        <div style={c.userList}>
-          {filteredUsers.length === 0 && <div style={c.noUsers}>No users found</div>}
-          {filteredUsers.map((u) => (
-            <div
-              key={u.username}
-              className="user-item"
+        {/* ── CHATS TAB ── */}
+        {sidebarTab === "chats" && (
+          <div style={c.userList}>
+            {filteredUsers.length === 0 && <div style={c.noUsers}>No users found</div>}
+            {filteredUsers.map((u) => (
+              <div
+                key={u.username}
+                className="user-item"
+                style={{
+                  ...c.userItem,
+                  background: activeChatUser?.username === u.username ? "rgba(102,126,234,0.15)" : "transparent",
+                  borderLeft: activeChatUser?.username === u.username ? "3px solid #667eea" : "3px solid transparent",
+                }}
+                onClick={() => openChat(u)}
+              >
+                <div style={{ position: "relative" }}>
+                  <div style={{ ...c.itemAvatar, background: avatarColor(u.username) }}>
+                    {u.username[0].toUpperCase()}
+                  </div>
+                  {onlineUsers[u.username] && <div style={c.onlineDot} />}
+                </div>
+                <div style={c.itemInfo}>
+                  <div style={c.itemName}>@{u.username}</div>
+                  <div style={c.itemPreview}>
+                    {typingUsers[u.username]
+                      ? <span style={{ color: "#43e97b", fontStyle: "italic" }}>typing...</span>
+                      : lastMsg(u)}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ── GROUPS TAB ── */}
+        {sidebarTab === "groups" && (
+          <div style={{ ...c.userList, display: "flex", flexDirection: "column" }}>
+            <button
+              onClick={() => setShowCreateGroup(true)}
               style={{
-                ...c.userItem,
-                background: activeChatUser?.username === u.username ? "rgba(102,126,234,0.15)" : "transparent",
-                borderLeft: activeChatUser?.username === u.username ? "3px solid #667eea" : "3px solid transparent",
+                margin: "10px 12px 4px", padding: "10px",
+                background: "linear-gradient(135deg, rgba(102,126,234,0.2), rgba(118,75,162,0.2))",
+                border: "1px dashed rgba(102,126,234,0.4)",
+                borderRadius: "10px", color: "#667eea",
+                fontSize: "13px", fontWeight: 700, cursor: "pointer",
               }}
-              onClick={() => openChat(u)}
             >
-              <div style={{ position: "relative" }}>
-                <div style={{ ...c.itemAvatar, background: avatarColor(u.username) }}>
-                  {u.username[0].toUpperCase()}
-                </div>
-                {onlineUsers[u.username] && <div style={c.onlineDot} />}
+              + New Group
+            </button>
+
+            {filteredGroups.length === 0 && (
+              <div style={c.noUsers}>
+                {myGroups.length === 0 ? "No groups yet. Create one!" : "No groups found"}
               </div>
-              <div style={c.itemInfo}>
-                <div style={c.itemName}>@{u.username}</div>
-                <div style={c.itemPreview}>
-                  {typingUsers[u.username]
-                    ? <span style={{ color: "#43e97b", fontStyle: "italic" }}>typing...</span>
-                    : lastMsg(u)}
+            )}
+
+            {filteredGroups.map((g) => (
+              <div
+                key={g.id}
+                className="user-item"
+                style={{
+                  ...c.userItem,
+                  background: activeGroup?.id === g.id ? "rgba(102,126,234,0.15)" : "transparent",
+                  borderLeft: activeGroup?.id === g.id ? "3px solid #667eea" : "3px solid transparent",
+                }}
+                onClick={() => openGroup(g)}
+              >
+                <div style={{ ...c.itemAvatar, background: avatarColor(g.name), fontSize: "16px" }}>
+                  {g.name[0].toUpperCase()}
+                </div>
+                <div style={c.itemInfo}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <span style={c.itemName}>{g.name}</span>
+                    <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.25)" }}>·{g.member_count} members</span>
+                  </div>
+                  <div style={c.itemPreview}>{groupLastMsg(g)}</div>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* ── CHAT WINDOW ── */}
-      <div className={windowClass}>
-        {!activeChatUser ? (
-          <div style={c.emptyState}>
+      <div className={windowClass} style={{ display: "flex" }}>
+        {!activeChat ? (
+          <div style={{ ...c.emptyState, flex: 1 }}>
             <div style={c.emptyIcon}>💬</div>
             <h2 style={c.emptyTitle}>Select a conversation</h2>
-            <p style={c.emptySubtitle}>Choose a user from the left to start chatting</p>
+            <p style={c.emptySubtitle}>Choose a user or group from the left to start chatting</p>
           </div>
         ) : (
-          <>
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            {/* ── CHAT HEADER ── */}
             <div style={c.chatHeader}>
               <button style={c.backBtn} onClick={closeChat} type="button">←</button>
-              <div style={{ position: "relative" }}>
-                <div style={{ ...c.chatHeaderAvatar, background: avatarColor(activeChatUser.username) }}>
-                  {activeChatUser.username[0].toUpperCase()}
-                </div>
-                {onlineUsers[activeChatUser.username] && <div style={c.onlineDotHeader} />}
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={c.chatHeaderName}>@{activeChatUser.username}</div>
-                <div style={c.chatHeaderStatus}>
-                  {typingUsers[activeChatUser.username] ? (
-                    <span style={{ color: "#43e97b" }}>typing...</span>
-                  ) : onlineUsers[activeChatUser.username] ? (
-                    <span style={{ color: "#43e97b" }}>● Online</span>
-                  ) : (
-                    <span style={{ color: "rgba(255,255,255,0.3)" }}>● Offline</span>
-                  )}
-                </div>
-              </div>
+
+              {activeChatUser && (
+                <>
+                  <div style={{ position: "relative" }}>
+                    <div style={{ ...c.chatHeaderAvatar, background: avatarColor(activeChatUser.username) }}>
+                      {activeChatUser.username[0].toUpperCase()}
+                    </div>
+                    {onlineUsers[activeChatUser.username] && <div style={c.onlineDotHeader} />}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={c.chatHeaderName}>@{activeChatUser.username}</div>
+                    <div style={c.chatHeaderStatus}>
+                      {typingUsers[activeChatUser.username] ? (
+                        <span style={{ color: "#43e97b" }}>typing...</span>
+                      ) : onlineUsers[activeChatUser.username] ? (
+                        <span style={{ color: "#43e97b" }}>● Online</span>
+                      ) : (
+                        <span style={{ color: "rgba(255,255,255,0.3)" }}>● Offline</span>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {activeGroup && (
+                <>
+                  <div style={{ ...c.chatHeaderAvatar, background: avatarColor(activeGroup.name), fontSize: "16px" }}>
+                    {activeGroup.name[0].toUpperCase()}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={c.chatHeaderName}>{activeGroup.name}</div>
+                    <div style={c.chatHeaderStatus}>
+                      {Object.keys(groupTypingUsers).filter((u) => groupTypingUsers[u]).length > 0 ? (
+                        <span style={{ color: "#43e97b" }}>
+                          {Object.keys(groupTypingUsers).filter((u) => groupTypingUsers[u]).join(", ")} typing...
+                        </span>
+                      ) : (
+                        <span style={{ color: "rgba(255,255,255,0.3)" }}>
+                          {groupMembers.length} members · {isGroupAdmin ? "You are admin" : `You are ${myRoleInGroup}`}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setShowMembersPanel((v) => !v)}
+                    style={{
+                      background: showMembersPanel ? "rgba(102,126,234,0.2)" : "rgba(255,255,255,0.07)",
+                      border: "1px solid rgba(255,255,255,0.1)", borderRadius: "8px",
+                      color: "#fff", padding: "6px 12px", cursor: "pointer", fontSize: "12px",
+                    }}
+                  >
+                    👥 Members
+                  </button>
+                </>
+              )}
+
               {!isMobile && (
                 <button style={c.closeBtn} onClick={closeChat} type="button">✕</button>
               )}
             </div>
 
-            <div style={c.messages}>
-              {hasMore && (
-                <div style={{ textAlign: "center", padding: "10px" }}>
+            <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+              {/* ── MESSAGES ── */}
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                <div style={c.messages}>
+                  {/* 1-on-1 messages */}
+                  {activeChatUser && (
+                    <>
+                      {hasMore && (
+                        <div style={{ textAlign: "center", padding: "10px" }}>
+                          <button onClick={loadMore} type="button" style={c.loadMoreBtn}>Load older messages</button>
+                        </div>
+                      )}
+                      {messages.length === 0 && (
+                        <div style={c.msgEmpty}>
+                          <div style={{ ...c.msgEmptyAvatar, background: avatarColor(activeChatUser.username) }}>
+                            {activeChatUser.username[0].toUpperCase()}
+                          </div>
+                          <p style={c.msgEmptyText}>Say hello to <strong style={{ color: "#fff" }}>@{activeChatUser.username}</strong></p>
+                        </div>
+                      )}
+                      {messages.map((msg, i) => {
+                        const isMe = (msg.from_user || msg.from) === currentUser.username;
+                        return (
+                          <div key={msg.id || i} style={{ ...c.msgRow, justifyContent: isMe ? "flex-end" : "flex-start" }}>
+                            {!isMe && (
+                              <div style={{ ...c.msgAvatar, background: avatarColor(msg.from_user || msg.from) }}>
+                                {(msg.from_user || msg.from)[0].toUpperCase()}
+                              </div>
+                            )}
+                            <div style={{ maxWidth: "70%", display: "flex", flexDirection: "column", gap: "2px" }}>
+                              <div style={{
+                                ...c.bubble,
+                                background: isMe ? (msg.status === "failed" ? "rgba(245,87,108,0.3)" : "linear-gradient(135deg, #667eea, #764ba2)") : "rgba(255,255,255,0.08)",
+                                borderRadius: isMe ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
+                                opacity: msg.optimistic ? 0.7 : 1,
+                              }}>
+                                {msg.text}
+                              </div>
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: isMe ? "flex-end" : "flex-start", gap: "3px", paddingLeft: "4px", paddingRight: "4px" }}>
+                                <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.2)" }}>{formatTime(msg)}</span>
+                                {isMe && statusTick(msg.status)}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </>
+                  )}
+
+                  {/* Group messages */}
+                  {activeGroup && (
+                    <>
+                      {groupHasMore && (
+                        <div style={{ textAlign: "center", padding: "10px" }}>
+                          <button onClick={loadMoreGroup} type="button" style={c.loadMoreBtn}>Load older messages</button>
+                        </div>
+                      )}
+                      {groupMessages.length === 0 && (
+                        <div style={c.msgEmpty}>
+                          <div style={{ ...c.msgEmptyAvatar, background: avatarColor(activeGroup.name) }}>
+                            {activeGroup.name[0].toUpperCase()}
+                          </div>
+                          <p style={c.msgEmptyText}>Start the conversation in <strong style={{ color: "#fff" }}>{activeGroup.name}</strong></p>
+                        </div>
+                      )}
+                      {groupMessages.map((msg, i) => {
+                        const isMe = msg.from_user === currentUser.username;
+                        return (
+                          <div key={msg.id || i} style={{ ...c.msgRow, justifyContent: isMe ? "flex-end" : "flex-start" }}>
+                            {!isMe && (
+                              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
+                                <div style={{ ...c.msgAvatar, background: avatarColor(msg.from_user) }}>
+                                  {msg.from_user[0].toUpperCase()}
+                                </div>
+                              </div>
+                            )}
+                            <div style={{ maxWidth: "70%", display: "flex", flexDirection: "column", gap: "2px" }}>
+                              {!isMe && (
+                                <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.35)", paddingLeft: "4px" }}>
+                                  @{msg.from_user}
+                                  {groupMembers.find((m) => m.username === msg.from_user)?.role === "admin" && (
+                                    <span style={{ color: "#f6d365", marginLeft: "4px" }}>👑</span>
+                                  )}
+                                </div>
+                              )}
+                              <div style={{
+                                ...c.bubble,
+                                background: isMe ? "linear-gradient(135deg, #667eea, #764ba2)" : "rgba(255,255,255,0.08)",
+                                borderRadius: isMe ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
+                                opacity: msg.optimistic ? 0.7 : 1,
+                              }}>
+                                {msg.text}
+                              </div>
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: isMe ? "flex-end" : "flex-start", gap: "3px", paddingLeft: "4px" }}>
+                                <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.2)" }}>{formatTime(msg)}</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </>
+                  )}
+
+                  <div ref={bottomRef} />
+                </div>
+
+                {/* ── INPUT ── */}
+                <div style={c.inputBar}>
+                  <input
+                    ref={inputRef}
+                    style={c.input}
+                    placeholder={
+                      activeChatUser
+                        ? `Message @${activeChatUser.username}…`
+                        : activeGroup
+                        ? `Message ${activeGroup.name}…`
+                        : "Type a message…"
+                    }
+                    value={input}
+                    onChange={handleInputChange}
+                    onKeyDown={handleKey}
+                  />
                   <button
-                    onClick={loadMore}
+                    style={{ ...c.sendBtn, opacity: input.trim() ? 1 : 0.4 }}
+                    onClick={sendMessage}
+                    disabled={!input.trim()}
                     type="button"
-                    style={{
-                      background: "rgba(255,255,255,0.07)",
-                      border: "1px solid rgba(255,255,255,0.15)",
-                      borderRadius: "20px",
-                      color: "rgba(255,255,255,0.5)",
-                      padding: "6px 18px",
-                      fontSize: "12px",
-                      cursor: "pointer",
-                    }}
                   >
-                    Load older messages
+                    ➤
                   </button>
                 </div>
-              )}
-              {messages.length === 0 && (
-                <div style={c.msgEmpty}>
-                  <div style={{ ...c.msgEmptyAvatar, background: avatarColor(activeChatUser.username) }}>
-                    {activeChatUser.username[0].toUpperCase()}
+              </div>
+
+              {/* ── MEMBERS PANEL (group only) ── */}
+              {activeGroup && showMembersPanel && (
+                <div style={{
+                  width: "220px", borderLeft: "1px solid rgba(255,255,255,0.07)",
+                  background: "#13132a", display: "flex", flexDirection: "column",
+                  flexShrink: 0, overflowY: "auto",
+                }}>
+                  <div style={{ padding: "14px 16px", borderBottom: "1px solid rgba(255,255,255,0.07)", fontSize: "12px", fontWeight: 700, color: "rgba(255,255,255,0.4)", letterSpacing: "0.5px" }}>
+                    MEMBERS ({groupMembers.length})
                   </div>
-                  <p style={c.msgEmptyText}>
-                    Say hello to <strong style={{ color: "#fff" }}>@{activeChatUser.username}</strong>
-                  </p>
+                  {groupMembers.map((m) => (
+                    <div key={m.username} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 14px" }}>
+                      <div style={{ ...c.msgAvatar, width: "32px", height: "32px", fontSize: "12px", background: avatarColor(m.username), flexShrink: 0 }}>
+                        {m.username[0].toUpperCase()}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: "13px", color: "#fff", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          @{m.username}
+                          {m.username === currentUser.username && <span style={{ color: "rgba(255,255,255,0.3)", fontWeight: 400 }}> (you)</span>}
+                        </div>
+                        <div style={{ fontSize: "11px", color: m.role === "admin" ? "#f6d365" : "rgba(255,255,255,0.3)" }}>
+                          {m.role === "admin" ? "👑 Admin" : "Member"}
+                        </div>
+                      </div>
+                      {/* Promote button — only admins see it, only for non-admins */}
+                      {isGroupAdmin && m.role !== "admin" && m.username !== currentUser.username && (
+                        <button
+                          onClick={() => promoteToAdmin(m.username)}
+                          title="Make Admin"
+                          style={{
+                            background: "rgba(246,211,101,0.1)", border: "1px solid rgba(246,211,101,0.3)",
+                            borderRadius: "6px", color: "#f6d365", fontSize: "10px",
+                            padding: "3px 6px", cursor: "pointer", flexShrink: 0,
+                          }}
+                        >
+                          👑
+                        </button>
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
-              {messages.map((msg, i) => {
-                const isMe = (msg.from_user || msg.from) === currentUser.username;
-                return (
-                  <div key={msg.id || i} style={{ ...c.msgRow, justifyContent: isMe ? "flex-end" : "flex-start" }}>
-                    {!isMe && (
-                      <div style={{ ...c.msgAvatar, background: avatarColor(msg.from_user || msg.from) }}>
-                        {(msg.from_user || msg.from)[0].toUpperCase()}
-                      </div>
-                    )}
-                    <div style={{ maxWidth: "70%", display: "flex", flexDirection: "column", gap: "2px" }}>
-                      <div style={{
-                        ...c.bubble,
-                        background: isMe
-                          ? msg.status === "failed"
-                            ? "rgba(245,87,108,0.3)"
-                            : "linear-gradient(135deg, #667eea, #764ba2)"
-                          : "rgba(255,255,255,0.08)",
-                        borderRadius: isMe ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
-                        opacity: msg.optimistic ? 0.7 : 1,
-                      }}>
-                        {msg.text}
-                      </div>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: isMe ? "flex-end" : "flex-start", gap: "3px", paddingLeft: "4px", paddingRight: "4px" }}>
-                        <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.2)" }}>{formatTime(msg)}</span>
-                        {isMe && statusTick(msg.status)}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-              <div ref={bottomRef} />
             </div>
-
-            <div style={c.inputBar}>
-              <input
-                ref={inputRef}
-                style={c.input}
-                placeholder={`Message @${activeChatUser.username}…`}
-                value={input}
-                onChange={handleInputChange}
-                onKeyDown={handleKey}
-              />
-              <button
-                style={{ ...c.sendBtn, opacity: input.trim() ? 1 : 0.4 }}
-                onClick={sendMessage}
-                disabled={!input.trim()}
-                type="button"
-              >
-                ➤
-              </button>
-            </div>
-          </>
+          </div>
         )}
       </div>
     </div>
@@ -599,6 +1062,7 @@ const c = {
   chatHeaderStatus: { fontSize: "11px" },
   closeBtn: { background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "8px", color: "rgba(255,255,255,0.5)", width: "32px", height: "32px", cursor: "pointer", fontSize: "14px", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
   messages: { flex: 1, overflowY: "auto", padding: "16px", display: "flex", flexDirection: "column", gap: "10px" },
+  loadMoreBtn: { background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: "20px", color: "rgba(255,255,255,0.5)", padding: "6px 18px", fontSize: "12px", cursor: "pointer" },
   msgEmpty: { margin: "auto", display: "flex", flexDirection: "column", alignItems: "center", gap: "12px", textAlign: "center" },
   msgEmptyAvatar: { width: "64px", height: "64px", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "24px", fontWeight: 700, color: "#fff" },
   msgEmptyText: { color: "rgba(255,255,255,0.35)", fontSize: "15px" },
