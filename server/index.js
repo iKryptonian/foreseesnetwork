@@ -245,6 +245,19 @@ io.on("connection", (socket) => {
         return;
       }
       const groupCheck = await pool.query(`SELECT created_by FROM groups WHERE id = $1`, [groupId]);
+      const isRequesterCreator = groupCheck.rows[0].created_by === requestedBy;
+      // Only creator can demote other admins; regular admins cannot demote other admins
+      if (!isRequesterCreator && adminCheck.rows[0].role === "admin") {
+        const targetRoleCheck = await pool.query(
+          `SELECT role FROM group_members WHERE group_id = $1 AND username = $2`,
+          [groupId, targetUser]
+        );
+        if (targetRoleCheck.rows[0]?.role === "admin") {
+          socket.emit("group_error", { message: "Only the group creator can demote other admins" });
+          return;
+        }
+      }
+      // Nobody can demote the creator
       if (groupCheck.rows[0].created_by === targetUser) {
         socket.emit("group_error", { message: "Cannot demote the group creator" });
         return;
@@ -276,9 +289,22 @@ io.on("connection", (socket) => {
         return;
       }
       const groupCheck = await pool.query(`SELECT created_by FROM groups WHERE id = $1`, [groupId]);
+      const isRequesterCreator = groupCheck.rows[0].created_by === requestedBy;
+      // Nobody can remove the creator
       if (groupCheck.rows[0].created_by === targetUser) {
         socket.emit("group_error", { message: "Cannot remove the group creator" });
         return;
+      }
+      // Only creator can remove other admins; regular admins cannot remove other admins
+      if (!isRequesterCreator) {
+        const targetRoleCheck = await pool.query(
+          `SELECT role FROM group_members WHERE group_id = $1 AND username = $2`,
+          [groupId, targetUser]
+        );
+        if (targetRoleCheck.rows[0]?.role === "admin") {
+          socket.emit("group_error", { message: "Only the group creator can remove other admins" });
+          return;
+        }
       }
       await pool.query(`DELETE FROM group_members WHERE group_id = $1 AND username = $2`, [groupId, targetUser]);
       const removedSocketId = userSocketMap[targetUser];

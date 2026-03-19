@@ -582,6 +582,7 @@ export default function ChatApp({ currentUser, onLogout }) {
 
   const myRoleInGroup = groupMembers.find((m) => m.username === currentUser.username)?.role;
   const isGroupAdmin = myRoleInGroup === "admin";
+  const isGroupCreator = activeGroup?.created_by === currentUser.username;
 
   const sidebarClass = `chat-sidebar${isMobile && (activeChatUser || activeGroup) ? " hidden" : ""}`;
   const windowClass = `chat-window${!isMobile || activeChatUser || activeGroup ? " visible" : ""}`;
@@ -1037,41 +1038,50 @@ export default function ChatApp({ currentUser, onLogout }) {
                         </div>
                       </div>
                       {/* Promote button — only admins see it, only for non-admins */}
-                      {isGroupAdmin && m.username !== currentUser.username && (
-                        <div style={{ display: "flex", gap: "4px", flexShrink: 0 }}>
-                          {m.role !== "admin" && (
-                            <button
-                              onClick={() => promoteToAdmin(m.username)}
-                              title="Promote to Admin"
-                              style={{
-                                background: "rgba(246,211,101,0.1)", border: "1px solid rgba(246,211,101,0.3)",
-                                borderRadius: "6px", color: "#f6d365", fontSize: "10px",
-                                padding: "3px 6px", cursor: "pointer",
-                              }}
-                            >👑</button>
-                          )}
-                          {m.role === "admin" && (
-                            <button
-                              onClick={() => demoteAdmin(m.username)}
-                              title="Demote to Member"
-                              style={{
-                                background: "rgba(255,165,0,0.1)", border: "1px solid rgba(255,165,0,0.3)",
-                                borderRadius: "6px", color: "#ffa500", fontSize: "10px",
-                                padding: "3px 6px", cursor: "pointer",
-                              }}
-                            >⬇️</button>
-                          )}
-                          <button
-                            onClick={() => removeMember(m.username)}
-                            title="Remove from Group"
-                            style={{
-                              background: "rgba(245,87,108,0.1)", border: "1px solid rgba(245,87,108,0.3)",
-                              borderRadius: "6px", color: "#f5576c", fontSize: "10px",
-                              padding: "3px 6px", cursor: "pointer",
-                            }}
-                          >✕</button>
-                        </div>
-                      )}
+                      {isGroupAdmin && m.username !== currentUser.username && (() => {
+                        const memberIsCreator = activeGroup?.created_by === m.username;
+                        const memberIsAdmin = m.role === "admin";
+                        // Creator can do everything; regular admin can only act on members
+                        const canAct = isGroupCreator || !memberIsAdmin;
+                        if (!canAct) return null;
+                        return (
+                          <div style={{ display: "flex", gap: "4px", flexShrink: 0 }}>
+                            {!memberIsAdmin && (
+                              <button
+                                onClick={() => promoteToAdmin(m.username)}
+                                title="Promote to Admin"
+                                style={{
+                                  background: "rgba(246,211,101,0.1)", border: "1px solid rgba(246,211,101,0.3)",
+                                  borderRadius: "6px", color: "#f6d365", fontSize: "10px",
+                                  padding: "3px 6px", cursor: "pointer",
+                                }}
+                              >👑</button>
+                            )}
+                            {memberIsAdmin && isGroupCreator && (
+                              <button
+                                onClick={() => demoteAdmin(m.username)}
+                                title="Demote to Member"
+                                style={{
+                                  background: "rgba(255,165,0,0.1)", border: "1px solid rgba(255,165,0,0.3)",
+                                  borderRadius: "6px", color: "#ffa500", fontSize: "10px",
+                                  padding: "3px 6px", cursor: "pointer",
+                                }}
+                              >⬇️</button>
+                            )}
+                            {!memberIsCreator && (
+                              <button
+                                onClick={() => removeMember(m.username)}
+                                title="Remove from Group"
+                                style={{
+                                  background: "rgba(245,87,108,0.1)", border: "1px solid rgba(245,87,108,0.3)",
+                                  borderRadius: "6px", color: "#f5576c", fontSize: "10px",
+                                  padding: "3px 6px", cursor: "pointer",
+                                }}
+                              >✕</button>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   ))}
                 </div>
