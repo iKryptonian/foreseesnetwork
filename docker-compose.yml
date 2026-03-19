@@ -1,5 +1,4 @@
 version: "3.8"
-
 services:
   # ── PostgreSQL Database ──
   postgres:
@@ -36,7 +35,7 @@ services:
       retries: 5
 
   # ── Node.js Server ──
-  server:
+  server-service:
     build:
       context: ./server
       dockerfile: Dockerfile
@@ -57,7 +56,6 @@ services:
       PGTZ: Asia/Kolkata
       EMAIL_USER: foreseesnetwork@gmail.com
       EMAIL_PASS: aoivchjwxrbwmjxv
-      
     depends_on:
       postgres:
         condition: service_healthy
@@ -76,7 +74,7 @@ services:
     ports:
       - "80:80"
     depends_on:
-      - server
+      - server-service
 
 volumes:
   postgres_data:
