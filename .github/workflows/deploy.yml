@@ -1,4 +1,5 @@
 name: CI/CD — ForeseesNetwork
+
 on:
   push:
     branches: [main]
@@ -17,10 +18,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build Server image
-        run: docker build -t livechat-server:latest ./server
+        run: docker build --no-cache -t livechat-server:latest ./server
 
       - name: Build Client image
-        run: docker build -t livechat-client:latest .
+        run: docker build --no-cache -t livechat-client:latest .
 
   # ─────────────────────────────────────────
   # JOB 2 — Deploy to Kubernetes
@@ -39,33 +40,33 @@ jobs:
       - name: Update kubeconfig from live Minikube
         run: |
           minikube update-context
-
-          # Embed certs directly into kubeconfig (fixes "Please enter Username" error)
           kubectl config set-credentials minikube \
             --client-certificate=$HOME/.minikube/profiles/minikube/client.crt \
             --client-key=$HOME/.minikube/profiles/minikube/client.key \
             --embed-certs=true
-
           kubectl config set-cluster minikube \
             --certificate-authority=$HOME/.minikube/ca.crt \
             --embed-certs=true
-
           kubectl config use-context minikube
-
-          # Verify connection works before proceeding
           kubectl get nodes
 
-      - name: Load images into Minikube
+      - name: Force remove old images from Minikube
         run: |
-          # Force remove old cached images so new ones always get used
           minikube ssh "docker rmi livechat-server:latest -f" || true
           minikube ssh "docker rmi livechat-client:latest -f" || true
 
+      - name: Load fresh images into Minikube
+        run: |
           minikube image load livechat-server:latest
           minikube image load livechat-client:latest
 
       - name: Apply Kubernetes manifests
         run: kubectl apply -f k8s/
+
+      - name: Restart deployments to pick up new images
+        run: |
+          kubectl rollout restart deployment/server -n foreseesnetwork
+          kubectl rollout restart deployment/client -n foreseesnetwork
 
       - name: Wait for rollout — Server
         run: |
