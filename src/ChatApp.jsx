@@ -29,6 +29,10 @@ if (!document.getElementById("chatapp-styles")) {
     .msg-bubble { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
     .msg-bubble:active { opacity: 0.85; }
     @keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+    * { -webkit-user-select: none; user-select: none; }
+    input, textarea { -webkit-user-select: text !important; user-select: text !important; }
+    * { -webkit-user-select: none; user-select: none; }
+    input, textarea { -webkit-user-select: text !important; user-select: text !important; }
     .user-item:hover { background: rgba(255,255,255,0.04) !important; }
     .modal-overlay {
       position: fixed; inset: 0; background: rgba(0,0,0,0.7);
@@ -107,7 +111,17 @@ export default function ChatApp({ currentUser, onLogout }) {
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth <= 768);
     window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+
+    // Block copy
+    const blockCopy = (e) => e.preventDefault();
+    document.addEventListener("copy", blockCopy);
+    document.addEventListener("cut", blockCopy);
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      document.removeEventListener("copy", blockCopy);
+      document.removeEventListener("cut", blockCopy);
+    };
   }, []);
 
   useEffect(() => { activeChatUserRef.current = activeChatUser; }, [activeChatUser]);
@@ -759,7 +773,18 @@ export default function ChatApp({ currentUser, onLogout }) {
   const activeChat = activeChatUser || activeGroup;
 
   return (
-    <div className="chat-layout" style={{ background: "#0f0f1e", fontFamily: "'Segoe UI', system-ui, sans-serif", color: "#fff", overflow: "hidden" }}>
+    <div
+      className="chat-layout"
+      style={{ background: "#0f0f1e", fontFamily: "'Segoe UI', system-ui, sans-serif", color: "#fff", overflow: "hidden" }}
+      onCopy={(e) => e.preventDefault()}
+      onCut={(e) => e.preventDefault()}
+      onContextMenu={(e) => {
+        // Allow context menu on inputs only
+        if (e.target.tagName !== "INPUT" && e.target.tagName !== "TEXTAREA") {
+          e.preventDefault();
+        }
+      }}
+    >
 
       {/* ── CREATE GROUP MODAL ── */}
       {reactionPickerMsgId && (
