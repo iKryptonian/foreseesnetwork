@@ -310,11 +310,11 @@ export default function ChatApp({ currentUser, onLogout }) {
 
   // ── LOAD USERS + RECENT CHATS ──
   useEffect(() => {
-    fetch(`${import.meta.env.VITE_API_URL}/api/users`)
+    fetch(`/api/users`)
       .then((r) => r.json())
       .then((data) => {
         const others = data.users.filter((u) => u.username !== currentUser.username);
-        fetch(`${import.meta.env.VITE_API_URL}/api/recent-chats/${currentUser.username}`)
+        fetch(`/api/recent-chats/${currentUser.username}`)
           .then((r) => r.json())
           .then((rc) => {
             const recentUsernames = (rc.chats || [])
@@ -335,7 +335,7 @@ export default function ChatApp({ currentUser, onLogout }) {
       });
 
     // Load my groups
-    fetch(`${import.meta.env.VITE_API_URL}/api/groups/user/${currentUser.username}`)
+    fetch(`/api/groups/user/${currentUser.username}`)
       .then((r) => r.json())
       .then((data) => setMyGroups(data.groups || []));
   }, []);
@@ -402,7 +402,7 @@ export default function ChatApp({ currentUser, onLogout }) {
     setHasMore(false);
 
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/messages/${currentUser.username}/${user.username}?offset=0`);
+      const res = await fetch(`/api/messages/${currentUser.username}/${user.username}?offset=0`);
       const data = await res.json();
       setMessages(data.messages || []);
       setHasMore(data.hasMore || false);
@@ -424,8 +424,8 @@ export default function ChatApp({ currentUser, onLogout }) {
 
     try {
       const [msgRes, memRes] = await Promise.all([
-        fetch(`${import.meta.env.VITE_API_URL}/api/groups/${group.id}/messages?offset=0`),
-        fetch(`${import.meta.env.VITE_API_URL}/api/groups/${group.id}/members`),
+        fetch(`/api/groups/${group.id}/messages?offset=0`),
+        fetch(`/api/groups/${group.id}/members`),
       ]);
       const msgData = await msgRes.json();
       const memData = await memRes.json();
@@ -443,7 +443,7 @@ export default function ChatApp({ currentUser, onLogout }) {
   const loadMore = async () => {
     const newOffset = msgOffset + 50;
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/messages/${currentUser.username}/${activeChatUser.username}?offset=${newOffset}`);
+      const res = await fetch(`/api/messages/${currentUser.username}/${activeChatUser.username}?offset=${newOffset}`);
       const data = await res.json();
       setMessages((prev) => [...(data.messages || []), ...prev]);
       setHasMore(data.hasMore || false);
@@ -454,7 +454,7 @@ export default function ChatApp({ currentUser, onLogout }) {
   const loadMoreGroup = async () => {
     const newOffset = groupMsgOffset + 50;
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/groups/${activeGroup.id}/messages?offset=${newOffset}`);
+      const res = await fetch(`/api/groups/${activeGroup.id}/messages?offset=${newOffset}`);
       const data = await res.json();
       setGroupMessages((prev) => [...(data.messages || []), ...prev]);
       setGroupHasMore(data.hasMore || false);
@@ -573,7 +573,7 @@ export default function ChatApp({ currentUser, onLogout }) {
     if (!newGroupName.trim()) return;
     setCreatingGroup(true);
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/groups`, {
+      const res = await fetch(`/api/groups`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
