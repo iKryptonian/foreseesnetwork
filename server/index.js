@@ -124,16 +124,16 @@ io.on("connection", (socket) => {
 
   // ── SEND 1-ON-1 MESSAGE ──
   socket.on("send_message", async (data, clientAck) => {
-    const { from, to, text, time } = data;
+    const { from, to, text, time, replyTo } = data;
 
     try {
       const userPair = [from, to].sort().join("_");
       const seqNum = await getNextSeq(userPair);
 
       const result = await pool.query(
-        `INSERT INTO messages (from_user, to_user, text, time, status, seq_num, acked)
-         VALUES ($1, $2, $3, $4, 'sent', $5, FALSE) RETURNING *`,
-        [from, to, text, time, seqNum]
+        `INSERT INTO messages (from_user, to_user, text, time, status, seq_num, acked, reply_to)
+         VALUES ($1, $2, $3, $4, 'sent', $5, FALSE, $6) RETURNING *`,
+        [from, to, text, time, seqNum, replyTo ? JSON.stringify(replyTo) : null]
       );
       const savedMsg = result.rows[0];
 
@@ -166,7 +166,7 @@ io.on("connection", (socket) => {
 
   // ── SEND GROUP MESSAGE ──
   socket.on("send_group_message", async (data, clientAck) => {
-    const { groupId, from, text, time } = data;
+    const { groupId, from, text, time, replyTo } = data;
 
     try {
       // Check sender is a member
@@ -180,9 +180,9 @@ io.on("connection", (socket) => {
       }
 
       const result = await pool.query(
-        `INSERT INTO group_messages (group_id, from_user, text, time, status)
-         VALUES ($1, $2, $3, $4, 'sent') RETURNING *`,
-        [groupId, from, text, time]
+        `INSERT INTO group_messages (group_id, from_user, text, time, status, reply_to)
+         VALUES ($1, $2, $3, $4, 'sent', $5) RETURNING *`,
+        [groupId, from, text, time, replyTo ? JSON.stringify(replyTo) : null]
       );
       const savedMsg = result.rows[0];
 
@@ -525,7 +525,7 @@ io.on("connection", (socket) => {
   socket.on("mark_read", async ({ from, to }) => {
     try {
       await pool.query(
-        "UPDATE messages SET status = 'read' WHERE from_user = $1 AND to_user = $2 AND status != 'read'",
+        "UPDATE messages SET status = 'read' WHERE from_user = $1 AND to_user = $2 AND status != 'read' AND deleted = FALSE",
         [from, to]
       );
       const senderSocketId = userSocketMap[from];

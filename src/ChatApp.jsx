@@ -76,12 +76,7 @@ export default function ChatApp({ currentUser, onLogout }) {
   const reactionHoverTimeout = useRef(null);
   const longPressTimeout = useRef(null);
   const [reactionPickerPos, setReactionPickerPos] = useState({ x: 0, y: 0 });
-  const [actionMenu, setActionMenu] = useState(null);
-  const [editingMsgId, setEditingMsgId] = useState(null);
-  const [editText, setEditText] = useState("");
-  const [swipedMsgId, setSwipedMsgId] = useState(null);
-  const swipeStartX = useRef(null);
-  const swipeStartY = useRef(null);
+  const [replyTo, setReplyTo] = useState(null); // { id, text, from_user, isGroup }
 
   // ── Create group modal ──
   const [showCreateGroup, setShowCreateGroup] = useState(false);
@@ -278,30 +273,6 @@ export default function ChatApp({ currentUser, onLogout }) {
       );
     });
 
-    socket.on("message_edited", ({ messageId, newText, isGroup }) => {
-      if (isGroup) {
-        setGroupMessages((prev) =>
-          prev.map((m) => m.id === messageId ? { ...m, text: newText, edited: true } : m)
-        );
-      } else {
-        setMessages((prev) =>
-          prev.map((m) => m.id === messageId ? { ...m, text: newText, edited: true } : m)
-        );
-      }
-    });
-
-    socket.on("message_deleted", ({ messageId, isGroup }) => {
-      if (isGroup) {
-        setGroupMessages((prev) =>
-          prev.map((m) => m.id === messageId ? { ...m, text: "This message was deleted", deleted: true } : m)
-        );
-      } else {
-        setMessages((prev) =>
-          prev.map((m) => m.id === messageId ? { ...m, text: "This message was deleted", deleted: true } : m)
-        );
-      }
-    });
-
     socket.on("reaction_updated", ({ messageId, reactions, isGroup }) => {
       if (isGroup) {
         setGroupMessages((prev) =>
@@ -347,8 +318,7 @@ export default function ChatApp({ currentUser, onLogout }) {
       socket.off("member_left");
       socket.off("members_added");
       socket.off("reaction_updated");
-      socket.off("message_edited");
-      socket.off("message_deleted");
+
       socket.off("group_typing");
       socket.off("group_stop_typing");
       socket.off("group_error");
@@ -552,12 +522,13 @@ export default function ChatApp({ currentUser, onLogout }) {
       setInput("");
 
       socket.emit("send_message",
-        { from: currentUser.username, to: activeChatUser.username, text, time },
+        { from: currentUser.username, to: activeChatUser.username, text, time, replyTo: replyTo ? { id: replyTo.id, text: replyTo.text, from_user: replyTo.from_user } : null },
         (response) => {
           if (response?.status === "saved" && response.msg) {
             setMessages((prev) => prev.map((m) => m.id === optimisticMsg.id ? response.msg : m));
             const chatKey = getChatKey(currentUser.username, activeChatUser.username);
             setLastMessages((prev) => ({ ...prev, [chatKey]: response.msg }));
+            setReplyTo(null);
           } else if (response?.status === "error") {
             setMessages((prev) => prev.map((m) => m.id === optimisticMsg.id ? { ...m, status: "failed" } : m));
           }
@@ -578,10 +549,11 @@ export default function ChatApp({ currentUser, onLogout }) {
       setInput("");
 
       socket.emit("send_group_message",
-        { groupId: activeGroup.id, from: currentUser.username, text, time },
+        { groupId: activeGroup.id, from: currentUser.username, text, time, replyTo: replyTo ? { id: replyTo.id, text: replyTo.text, from_user: replyTo.from_user } : null },
         (response) => {
           if (response?.status === "saved" && response.msg) {
             setGroupMessages((prev) => prev.map((m) => m.id === optimisticMsg.id ? response.msg : m));
+            setReplyTo(null);
             setMyGroups((prev) =>
               prev.map((g) =>
                 g.id === activeGroup.id
@@ -710,58 +682,13 @@ export default function ChatApp({ currentUser, onLogout }) {
     // Keep picker open so user can add multiple reactions
   };
 
-  const editMessage = (msgId, currentText, isGroup) => {
-    setEditingMsgId(msgId);
-    setEditText(currentText);
-    setActionMenu(null);
-  };
-
-  const saveEdit = (msgId, isGroup) => {
-    if (!editText.trim()) return;
-    socket.emit("edit_message", {
-      messageId: msgId,
-      newText: editText.trim(),
-      username: currentUser.username,
-      isGroup: !!isGroup,
-      groupId: activeGroup?.id,
+  const handleReply = (msg) => {
+    setReplyTo({
+      id: msg.id,
+      text: msg.text,
+      from_user: msg.from_user || msg.from,
     });
-    setEditingMsgId(null);
-    setEditText("");
-  };
-
-  const deleteMessage = (msgId, isGroup) => {
-    if (!window.confirm("Delete this message?")) return;
-    socket.emit("delete_message", {
-      messageId: msgId,
-      username: currentUser.username,
-      isGroup: !!isGroup,
-      groupId: activeGroup?.id,
-    });
-    setActionMenu(null);
-  };
-
-  const handleSwipeStart = (e, msg) => {
-    if (!msg || msg.deleted || msg.optimistic) return;
-    swipeStartX.current = e.touches ? e.touches[0].clientX : e.clientX;
-    swipeStartY.current = e.touches ? e.touches[0].clientY : e.clientY;
-  };
-
-  const handleSwipeEnd = (e, msg, isGroup, isMe) => {
-    if (!isMe || !swipeStartX.current || msg.deleted || msg.optimistic) {
-      swipeStartX.current = null;
-      return;
-    }
-    const endX = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
-    const endY = e.changedTouches ? e.changedTouches[0].clientY : e.clientY;
-    const diffX = swipeStartX.current - endX;
-    const diffY = Math.abs(swipeStartY.current - endY);
-
-    // Only trigger if horizontal swipe > 60px and not mostly vertical
-    if (diffX > 60 && diffY < 40) {
-      setSwipedMsgId(swipedMsgId === msg.id ? null : msg.id);
-      setActionMenu(null);
-    }
-    swipeStartX.current = null;
+    setTimeout(() => inputRef.current?.focus(), 100);
   };
 
   const myRoleInGroup = groupMembers.find((m) => m.username === currentUser.username)?.role;
@@ -892,14 +819,7 @@ export default function ChatApp({ currentUser, onLogout }) {
         </>
       )}
 
-      {/* Click outside to close swipe actions */}
-      {swipedMsgId && (
-        <div
-          onMouseDown={() => setSwipedMsgId(null)}
-          onTouchStart={() => setSwipedMsgId(null)}
-          style={{ position: "fixed", inset: 0, zIndex: 5 }}
-        />
-      )}
+
 
       {showAddMembers && activeGroup && (
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowAddMembers(false)}>
@@ -1277,58 +1197,37 @@ export default function ChatApp({ currentUser, onLogout }) {
                       {messages.map((msg, i) => {
                         const isMe = (msg.from_user || msg.from) === currentUser.username;
                         return (
-                          <div key={msg.id || i} style={{ position: "relative", display: "flex", justifyContent: isMe ? "flex-end" : "flex-start", alignItems: "flex-end", gap: "8px" }}>
-                            {/* Swipe action buttons — only for own messages */}
-                            {isMe && swipedMsgId === msg.id && !msg.deleted && (
-                              <div style={{ display: "flex", gap: "6px", alignItems: "center", zIndex: 10, animation: "slideIn 0.2s ease" }}>
-                                <button
-                                  onClick={() => { editMessage(msg.id, msg.text, false); setSwipedMsgId(null); }}
-                                  style={{ background: "rgba(102,126,234,0.2)", border: "1px solid rgba(102,126,234,0.4)", borderRadius: "10px", color: "#667eea", padding: "8px 12px", cursor: "pointer", fontSize: "13px", fontWeight: 600, whiteSpace: "nowrap" }}
-                                >✏️ Edit</button>
-                                <button
-                                  onClick={() => { deleteMessage(msg.id, false); setSwipedMsgId(null); }}
-                                  style={{ background: "rgba(245,87,108,0.15)", border: "1px solid rgba(245,87,108,0.35)", borderRadius: "10px", color: "#f5576c", padding: "8px 12px", cursor: "pointer", fontSize: "13px", fontWeight: 600, whiteSpace: "nowrap" }}
-                                >🗑️ Delete</button>
-                              </div>
-                            )}
+                          <div key={msg.id || i} style={{ ...c.msgRow, justifyContent: isMe ? "flex-end" : "flex-start" }}>
                             {!isMe && (
                               <div style={{ ...c.msgAvatar, background: avatarColor(msg.from_user || msg.from) }}>
                                 {(msg.from_user || msg.from)[0].toUpperCase()}
                               </div>
                             )}
-                            <div style={{ maxWidth: "70%", display: "flex", flexDirection: "column", gap: "2px", zIndex: 6 }}>
+                            <div style={{ maxWidth: "70%", display: "flex", flexDirection: "column", gap: "2px", }}>
                               <div
+                                onDoubleClick={() => !msg.optimistic && handleReply(msg)}
                                 onMouseDown={(e) => {
-                                  if (msg.optimistic || msg.deleted) return;
-                                  handleSwipeStart(e, msg);
+                                  if (msg.optimistic) return;
                                   const x = e.clientX; const y = e.clientY;
                                   longPressTimeout.current = setTimeout(() => {
                                     setReactionPickerPos({ x, y });
                                     setReactionPickerMsgId(msg.id);
                                     setShowAllEmojis(false);
-                                    setSwipedMsgId(null);
                                   }, 500);
                                 }}
-                                onMouseUp={(e) => {
-                                  clearTimeout(longPressTimeout.current);
-                                  handleSwipeEnd(e, msg, false, isMe);
-                                }}
+                                onMouseUp={() => clearTimeout(longPressTimeout.current)}
                                 onMouseLeave={() => clearTimeout(longPressTimeout.current)}
                                 onTouchStart={(e) => {
-                                  if (msg.optimistic || msg.deleted) return;
-                                  handleSwipeStart(e, msg);
+                                  if (msg.optimistic) return;
+                                  e.preventDefault();
                                   const x = e.touches[0].clientX; const y = e.touches[0].clientY;
                                   longPressTimeout.current = setTimeout(() => {
                                     setReactionPickerPos({ x, y });
                                     setReactionPickerMsgId(msg.id);
                                     setShowAllEmojis(false);
-                                    setSwipedMsgId(null);
                                   }, 500);
                                 }}
-                                onTouchEnd={(e) => {
-                                  clearTimeout(longPressTimeout.current);
-                                  handleSwipeEnd(e, msg, false, isMe);
-                                }}
+                                onTouchEnd={() => clearTimeout(longPressTimeout.current)}
                                 onContextMenu={(e) => e.preventDefault()}
                                 style={{
                                   ...c.bubble,
@@ -1342,28 +1241,14 @@ export default function ChatApp({ currentUser, onLogout }) {
                                 }}
                                 className="msg-bubble"
                               >
-                                {msg.deleted ? (
-                                  <span style={{ color: "rgba(255,255,255,0.3)", fontSize: "13px" }}>🚫 This message was deleted</span>
-                                ) : editingMsgId === msg.id ? (
-                                  <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-                                    <input
-                                      autoFocus
-                                      value={editText}
-                                      onChange={(e) => setEditText(e.target.value)}
-                                      onKeyDown={(e) => {
-                                        if (e.key === "Enter") saveEdit(msg.id, false);
-                                        if (e.key === "Escape") { setEditingMsgId(null); setEditText(""); }
-                                      }}
-                                      style={{ flex: 1, background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", color: "#fff", padding: "4px 8px", fontSize: "14px", outline: "none" }}
-                                    />
-                                    <span onClick={() => saveEdit(msg.id, false)} style={{ cursor: "pointer", fontSize: "16px" }}>✓</span>
-                                    <span onClick={() => { setEditingMsgId(null); setEditText(""); }} style={{ cursor: "pointer", fontSize: "16px", opacity: 0.5 }}>✕</span>
+                                {msg.reply_to && (
+                                  <div style={{ background: "rgba(0,0,0,0.2)", borderLeft: "3px solid rgba(255,255,255,0.4)", borderRadius: "6px", padding: "5px 8px", marginBottom: "6px", fontSize: "12px" }}>
+                                    <div style={{ color: "rgba(255,255,255,0.6)", fontWeight: 700, marginBottom: "2px" }}>@{msg.reply_to.from_user}</div>
+                                    <div style={{ color: "rgba(255,255,255,0.4)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{msg.reply_to.text}</div>
                                   </div>
-                                ) : msg.text}
+                                )}
+                                {msg.text}
                               </div>
-                              {msg.edited && !msg.deleted && (
-                                <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.25)", textAlign: isMe ? "right" : "left", paddingLeft: "4px", paddingRight: "4px" }}>edited</div>
-                              )}
                               {!msg.deleted && msg.reactions && Object.keys(msg.reactions).length > 0 && (
                                 <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", justifyContent: isMe ? "flex-end" : "flex-start", paddingLeft: "4px", paddingRight: "4px" }}>
                                   {Object.entries(msg.reactions).map(([emoji, users]) => (
@@ -1403,20 +1288,7 @@ export default function ChatApp({ currentUser, onLogout }) {
                       {groupMessages.map((msg, i) => {
                         const isMe = msg.from_user === currentUser.username;
                         return (
-                          <div key={msg.id || i} style={{ position: "relative", display: "flex", justifyContent: isMe ? "flex-end" : "flex-start", alignItems: "flex-end", gap: "8px" }}>
-                            {/* Swipe action buttons for group messages */}
-                            {isMe && swipedMsgId === msg.id && !msg.deleted && (
-                              <div style={{ display: "flex", gap: "6px", alignItems: "center", zIndex: 10 }}>
-                                <button
-                                  onClick={() => { editMessage(msg.id, msg.text, true); setSwipedMsgId(null); }}
-                                  style={{ background: "rgba(102,126,234,0.2)", border: "1px solid rgba(102,126,234,0.4)", borderRadius: "10px", color: "#667eea", padding: "8px 12px", cursor: "pointer", fontSize: "13px", fontWeight: 600, whiteSpace: "nowrap" }}
-                                >✏️ Edit</button>
-                                <button
-                                  onClick={() => { deleteMessage(msg.id, true); setSwipedMsgId(null); }}
-                                  style={{ background: "rgba(245,87,108,0.15)", border: "1px solid rgba(245,87,108,0.35)", borderRadius: "10px", color: "#f5576c", padding: "8px 12px", cursor: "pointer", fontSize: "13px", fontWeight: 600, whiteSpace: "nowrap" }}
-                                >🗑️ Delete</button>
-                              </div>
-                            )}
+                          <div key={msg.id || i} style={{ ...c.msgRow, justifyContent: isMe ? "flex-end" : "flex-start" }}>
                             {!isMe && (
                               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
                                 <div style={{ ...c.msgAvatar, background: avatarColor(msg.from_user) }}>
@@ -1424,7 +1296,7 @@ export default function ChatApp({ currentUser, onLogout }) {
                                 </div>
                               </div>
                             )}
-                            <div style={{ maxWidth: "70%", display: "flex", flexDirection: "column", gap: "2px", zIndex: 6 }}>
+                            <div style={{ maxWidth: "70%", display: "flex", flexDirection: "column", gap: "2px", }}>
                               {!isMe && (
                                 <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.35)", paddingLeft: "4px" }}>
                                   @{msg.from_user}
@@ -1444,61 +1316,39 @@ export default function ChatApp({ currentUser, onLogout }) {
                                   userSelect: "none",
                                   WebkitUserSelect: "none",
                                 }}
+                                onDoubleClick={() => !msg.optimistic && handleReply(msg)}
                                 onMouseDown={(e) => {
-                                  if (msg.optimistic || msg.deleted) return;
-                                  handleSwipeStart(e, msg);
+                                  if (msg.optimistic) return;
                                   const x = e.clientX; const y = e.clientY;
                                   longPressTimeout.current = setTimeout(() => {
                                     setReactionPickerPos({ x, y });
                                     setReactionPickerMsgId(msg.id);
                                     setShowAllEmojis(false);
-                                    setSwipedMsgId(null);
                                   }, 500);
                                 }}
-                                onMouseUp={(e) => {
-                                  clearTimeout(longPressTimeout.current);
-                                  handleSwipeEnd(e, msg, true, isMe);
-                                }}
+                                onMouseUp={() => clearTimeout(longPressTimeout.current)}
                                 onMouseLeave={() => clearTimeout(longPressTimeout.current)}
                                 onTouchStart={(e) => {
-                                  if (msg.optimistic || msg.deleted) return;
-                                  handleSwipeStart(e, msg);
+                                  if (msg.optimistic) return;
+                                  e.preventDefault();
                                   const x = e.touches[0].clientX; const y = e.touches[0].clientY;
                                   longPressTimeout.current = setTimeout(() => {
                                     setReactionPickerPos({ x, y });
                                     setReactionPickerMsgId(msg.id);
                                     setShowAllEmojis(false);
-                                    setSwipedMsgId(null);
                                   }, 500);
                                 }}
-                                onTouchEnd={(e) => {
-                                  clearTimeout(longPressTimeout.current);
-                                  handleSwipeEnd(e, msg, true, isMe);
-                                }}
+                                onTouchEnd={() => clearTimeout(longPressTimeout.current)}
                                 onContextMenu={(e) => e.preventDefault()}
                               >
-                                {msg.deleted ? (
-                                  <span style={{ color: "rgba(255,255,255,0.3)", fontSize: "13px", fontStyle: "italic" }}>🚫 This message was deleted</span>
-                                ) : editingMsgId === msg.id ? (
-                                  <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-                                    <input
-                                      autoFocus
-                                      value={editText}
-                                      onChange={(e) => setEditText(e.target.value)}
-                                      onKeyDown={(e) => {
-                                        if (e.key === "Enter") saveEdit(msg.id, true);
-                                        if (e.key === "Escape") { setEditingMsgId(null); setEditText(""); }
-                                      }}
-                                      style={{ flex: 1, background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", color: "#fff", padding: "4px 8px", fontSize: "14px", outline: "none" }}
-                                    />
-                                    <span onClick={() => saveEdit(msg.id, true)} style={{ cursor: "pointer", fontSize: "16px" }}>✓</span>
-                                    <span onClick={() => { setEditingMsgId(null); setEditText(""); }} style={{ cursor: "pointer", fontSize: "16px", opacity: 0.5 }}>✕</span>
+                                {msg.reply_to && (
+                                  <div style={{ background: "rgba(0,0,0,0.2)", borderLeft: "3px solid rgba(255,255,255,0.4)", borderRadius: "6px", padding: "5px 8px", marginBottom: "6px", fontSize: "12px" }}>
+                                    <div style={{ color: "rgba(255,255,255,0.6)", fontWeight: 700, marginBottom: "2px" }}>@{msg.reply_to.from_user}</div>
+                                    <div style={{ color: "rgba(255,255,255,0.4)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{msg.reply_to.text}</div>
                                   </div>
-                                ) : msg.text}
+                                )}
+                                {msg.text}
                               </div>
-                              {msg.edited && !msg.deleted && (
-                                <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.25)", textAlign: isMe ? "right" : "left", paddingLeft: "4px" }}>edited</div>
-                              )}
                               {!msg.deleted && msg.reactions && Object.keys(msg.reactions).length > 0 && (
                                 <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", justifyContent: isMe ? "flex-end" : "flex-start", paddingLeft: "4px", paddingRight: "4px" }}>
                                   {Object.entries(msg.reactions).map(([emoji, users]) => (
@@ -1520,6 +1370,17 @@ export default function ChatApp({ currentUser, onLogout }) {
 
                   <div ref={bottomRef} />
                 </div>
+
+                {/* ── REPLY PREVIEW ── */}
+                {replyTo && (
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 16px 0", background: "rgba(19,19,42,0.98)", borderTop: "1px solid rgba(255,255,255,0.07)" }}>
+                    <div style={{ flex: 1, background: "rgba(102,126,234,0.1)", borderLeft: "3px solid #667eea", borderRadius: "8px", padding: "6px 10px" }}>
+                      <div style={{ fontSize: "11px", color: "#667eea", fontWeight: 700, marginBottom: "2px" }}>↩ Replying to @{replyTo.from_user}</div>
+                      <div style={{ fontSize: "12px", color: "rgba(255,255,255,0.5)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{replyTo.text}</div>
+                    </div>
+                    <button onClick={() => setReplyTo(null)} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.4)", cursor: "pointer", fontSize: "16px", padding: "4px" }}>✕</button>
+                  </div>
+                )}
 
                 {/* ── INPUT ── */}
                 <div style={c.inputBar}>
