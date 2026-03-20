@@ -390,12 +390,18 @@ io.on("connection", (socket) => {
       if (!result.rows.length) return;
 
       let reactions = result.rows[0].reactions || {};
-      if (!reactions[emoji]) reactions[emoji] = [];
-      if (reactions[emoji].includes(username)) {
-        // Toggle off
-        reactions[emoji] = reactions[emoji].filter(u => u !== username);
-        if (reactions[emoji].length === 0) delete reactions[emoji];
-      } else {
+
+      // Remove user from ANY existing emoji first (one reaction per person)
+      for (const key of Object.keys(reactions)) {
+        reactions[key] = reactions[key].filter(u => u !== username);
+        if (reactions[key].length === 0) delete reactions[key];
+      }
+
+      // If user clicked their current emoji → just remove it (toggle off)
+      // If user clicked a new emoji → add it
+      const alreadyHadThisEmoji = (result.rows[0].reactions?.[emoji] || []).includes(username);
+      if (!alreadyHadThisEmoji) {
+        if (!reactions[emoji]) reactions[emoji] = [];
         reactions[emoji].push(username);
       }
 
