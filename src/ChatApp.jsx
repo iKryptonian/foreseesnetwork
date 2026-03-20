@@ -692,15 +692,21 @@ export default function ChatApp({ currentUser, onLogout }) {
   };
 
   const scrollToMessage = (msgId) => {
-    const el = document.getElementById(`msg-${msgId}`);
+    if (!msgId) return;
+    // Try all possible id formats
+    const id = String(msgId);
+    let el = document.getElementById(`msg-${id}`);
+    if (!el) el = document.getElementById(`msg-${parseInt(id)}`);
+    if (!el) {
+      // Search all message divs
+      const all = document.querySelectorAll('[id^="msg-"]');
+      el = Array.from(all).find(e => e.id === `msg-${id}` || e.id === `msg-${parseInt(id)}`);
+    }
     if (!el) return;
     el.scrollIntoView({ behavior: "smooth", block: "center" });
-    // Flash highlight
-    el.style.transition = "background 0.3s";
-    el.style.background = "rgba(102,126,234,0.3)";
-    setTimeout(() => {
-      el.style.background = "transparent";
-    }, 1500);
+    el.style.transition = "background 0.5s ease";
+    el.style.background = "rgba(102,126,234,0.35)";
+    setTimeout(() => { el.style.background = ""; }, 1800);
   };
 
   const myRoleInGroup = groupMembers.find((m) => m.username === currentUser.username)?.role;
@@ -780,7 +786,7 @@ export default function ChatApp({ currentUser, onLogout }) {
                   "🧐","😕","😟","🙁","☹️","😮","😯","😲","😳","🥺","😦","😧","😨","😰","😥","😢","😭","😱","😖","😣",
                   "😞","😓","😩","😫","🥱","😤","😡","😠","🤬","😈","👿","💀","☠️","💩","🤡","👹","👺","👻","👽","👾","🤖",
                   // Gestures & People
-                  "👋","🤚","🖐","✋","🖖","👌","🤌","🤏","✌️","🤞","🤟","🤘","🤙","👈","👉","👆","👇","☝️","👍","👎",
+                  "🖕","👋","🤚","🖐","✋","🖖","👌","🤌","🤏","✌️","🤞","🤟","🤘","🤙","👈","👉","👆","👇","☝️","👍","👎",
                   "✊","👊","🤛","🤜","👏","🙌","👐","🤲","🤝","🙏","✍️","💅","🤳","💪","🦾","🫀","🫁","🦷","👀","👁",
                   // Hearts & Love
                   "❤️","🧡","💛","💚","💙","💜","🖤","🤍","🤎","💔","❣️","💕","💞","💓","💗","💖","💘","💝","💟","♥️",
@@ -1255,7 +1261,7 @@ export default function ChatApp({ currentUser, onLogout }) {
                               >
                                 {msg.reply_to && (
                                   <div
-                                    onClick={(e) => { e.stopPropagation(); scrollToMessage(msg.reply_to.id); }}
+                                    onClick={(e) => { e.stopPropagation(); scrollToMessage(msg.reply_to?.id); }}
                                     style={{ background: "rgba(0,0,0,0.2)", borderLeft: "3px solid rgba(255,255,255,0.4)", borderRadius: "6px", padding: "5px 8px", marginBottom: "6px", fontSize: "12px", cursor: "pointer" }}
                                   >
                                     <div style={{ color: "rgba(255,255,255,0.6)", fontWeight: 700, marginBottom: "2px" }}>@{msg.reply_to.from_user}</div>
@@ -1358,7 +1364,7 @@ export default function ChatApp({ currentUser, onLogout }) {
                               >
                                 {msg.reply_to && (
                                   <div
-                                    onClick={(e) => { e.stopPropagation(); scrollToMessage(msg.reply_to.id); }}
+                                    onClick={(e) => { e.stopPropagation(); scrollToMessage(msg.reply_to?.id); }}
                                     style={{ background: "rgba(0,0,0,0.2)", borderLeft: "3px solid rgba(255,255,255,0.4)", borderRadius: "6px", padding: "5px 8px", marginBottom: "6px", fontSize: "12px", cursor: "pointer" }}
                                   >
                                     <div style={{ color: "rgba(255,255,255,0.6)", fontWeight: 700, marginBottom: "2px" }}>@{msg.reply_to.from_user}</div>
