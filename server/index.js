@@ -442,6 +442,85 @@ io.on("connection", (socket) => {
 
 
 
+  // ── EDIT MESSAGE ──
+  socket.on("edit_message", async ({ messageId, newText, username, isGroup, groupId }) => {
+    try {
+      const table = isGroup ? "group_messages" : "messages";
+      const ownerCol = isGroup ? "from_user" : "from_user";
+
+      // Verify ownership
+      const check = await pool.query(
+        `SELECT from_user FROM ${table} WHERE id = $1`, [messageId]
+      );
+      if (!check.rows.length || check.rows[0].from_user !== username) {
+        socket.emit("message_error", { message: "Cannot edit this message" });
+        return;
+      }
+
+      await pool.query(
+        `UPDATE ${table} SET text = $1, edited = TRUE WHERE id = $2`,
+        [newText.trim(), messageId]
+      );
+
+      const event = { messageId, newText: newText.trim(), isGroup, groupId };
+
+      if (isGroup) {
+        io.to(`group:${groupId}`).emit("message_edited", event);
+      } else {
+        const msgResult = await pool.query(
+          `SELECT from_user, to_user FROM messages WHERE id = $1`, [messageId]
+        );
+        if (msgResult.rows.length) {
+          const { from_user, to_user } = msgResult.rows[0];
+          [from_user, to_user].forEach(u => {
+            const sid = userSocketMap[u];
+            if (sid) io.to(sid).emit("message_edited", event);
+          });
+        }
+      }
+      console.log(`✏️ Message ${messageId} edited by ${username}`);
+    } catch (err) { console.error("edit_message error:", err); }
+  });
+
+  // ── DELETE MESSAGE ──
+  socket.on("delete_message", async ({ messageId, username, isGroup, groupId }) => {
+    try {
+      const table = isGroup ? "group_messages" : "messages";
+
+      // Verify ownership
+      const check = await pool.query(
+        `SELECT from_user FROM ${table} WHERE id = $1`, [messageId]
+      );
+      if (!check.rows.length || check.rows[0].from_user !== username) {
+        socket.emit("message_error", { message: "Cannot delete this message" });
+        return;
+      }
+
+      await pool.query(
+        `UPDATE ${table} SET deleted = TRUE, text = 'This message was deleted' WHERE id = $1`,
+        [messageId]
+      );
+
+      const event = { messageId, isGroup, groupId };
+
+      if (isGroup) {
+        io.to(`group:${groupId}`).emit("message_deleted", event);
+      } else {
+        const msgResult = await pool.query(
+          `SELECT from_user, to_user FROM messages WHERE id = $1`, [messageId]
+        );
+        if (msgResult.rows.length) {
+          const { from_user, to_user } = msgResult.rows[0];
+          [from_user, to_user].forEach(u => {
+            const sid = userSocketMap[u];
+            if (sid) io.to(sid).emit("message_deleted", event);
+          });
+        }
+      }
+      console.log(`🗑️ Message ${messageId} deleted by ${username}`);
+    } catch (err) { console.error("delete_message error:", err); }
+  });
+
   // ── MARK READ ──
   socket.on("mark_read", async ({ from, to }) => {
     try {

@@ -71,6 +71,9 @@ export default function ChatApp({ currentUser, onLogout }) {
   const reactionHoverTimeout = useRef(null);
   const longPressTimeout = useRef(null);
   const [reactionPickerPos, setReactionPickerPos] = useState({ x: 0, y: 0 });
+  const [actionMenu, setActionMenu] = useState(null); // { msgId, x, y, isGroup, isMe }
+  const [editingMsgId, setEditingMsgId] = useState(null);
+  const [editText, setEditText] = useState("");
 
   // ── Create group modal ──
   const [showCreateGroup, setShowCreateGroup] = useState(false);
@@ -257,6 +260,30 @@ export default function ChatApp({ currentUser, onLogout }) {
       );
     });
 
+    socket.on("message_edited", ({ messageId, newText, isGroup }) => {
+      if (isGroup) {
+        setGroupMessages((prev) =>
+          prev.map((m) => m.id === messageId ? { ...m, text: newText, edited: true } : m)
+        );
+      } else {
+        setMessages((prev) =>
+          prev.map((m) => m.id === messageId ? { ...m, text: newText, edited: true } : m)
+        );
+      }
+    });
+
+    socket.on("message_deleted", ({ messageId, isGroup }) => {
+      if (isGroup) {
+        setGroupMessages((prev) =>
+          prev.map((m) => m.id === messageId ? { ...m, text: "This message was deleted", deleted: true } : m)
+        );
+      } else {
+        setMessages((prev) =>
+          prev.map((m) => m.id === messageId ? { ...m, text: "This message was deleted", deleted: true } : m)
+        );
+      }
+    });
+
     socket.on("reaction_updated", ({ messageId, reactions, isGroup }) => {
       if (isGroup) {
         setGroupMessages((prev) =>
@@ -302,6 +329,8 @@ export default function ChatApp({ currentUser, onLogout }) {
       socket.off("member_left");
       socket.off("members_added");
       socket.off("reaction_updated");
+      socket.off("message_edited");
+      socket.off("message_deleted");
       socket.off("group_typing");
       socket.off("group_stop_typing");
       socket.off("group_error");
@@ -663,6 +692,44 @@ export default function ChatApp({ currentUser, onLogout }) {
     // Keep picker open so user can add multiple reactions
   };
 
+  const editMessage = (msgId, currentText, isGroup) => {
+    setEditingMsgId(msgId);
+    setEditText(currentText);
+    setActionMenu(null);
+  };
+
+  const saveEdit = (msgId, isGroup) => {
+    if (!editText.trim()) return;
+    socket.emit("edit_message", {
+      messageId: msgId,
+      newText: editText.trim(),
+      username: currentUser.username,
+      isGroup: !!isGroup,
+      groupId: activeGroup?.id,
+    });
+    setEditingMsgId(null);
+    setEditText("");
+  };
+
+  const deleteMessage = (msgId, isGroup) => {
+    if (!window.confirm("Delete this message?")) return;
+    socket.emit("delete_message", {
+      messageId: msgId,
+      username: currentUser.username,
+      isGroup: !!isGroup,
+      groupId: activeGroup?.id,
+    });
+    setActionMenu(null);
+  };
+
+  const openActionMenu = (e, msg, isGroup, isMe) => {
+    if (!isMe || msg.optimistic || msg.deleted) return;
+    const x = e.clientX || e.touches?.[0]?.clientX || 0;
+    const y = e.clientY || e.touches?.[0]?.clientY || 0;
+    setActionMenu({ msgId: msg.id, msgText: msg.text, x, y, isGroup, isMe });
+    setReactionPickerMsgId(null);
+  };
+
   const myRoleInGroup = groupMembers.find((m) => m.username === currentUser.username)?.role;
   const isGroupAdmin = myRoleInGroup === "admin";
   const isGroupCreator = activeGroup?.created_by === currentUser.username;
@@ -776,6 +843,47 @@ export default function ChatApp({ currentUser, onLogout }) {
                 style={{ fontSize: "13px", cursor: "pointer", padding: "4px 10px", borderRadius: "12px", background: "rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.8)", display: "flex", alignItems: "center", fontWeight: 600 }}
               >+</span>
             )}
+          </div>
+        </>
+      )}
+
+      {/* ── ACTION MENU (Edit/Delete) ── */}
+      {actionMenu && (
+        <>
+          <div
+            onMouseDown={() => setActionMenu(null)}
+            onTouchStart={() => setActionMenu(null)}
+            style={{ position: "fixed", inset: 0, zIndex: 1999 }}
+          />
+          <div
+            onMouseDown={(e) => e.stopPropagation()}
+            style={{
+              position: "fixed",
+              top: Math.min(actionMenu.y - 10, window.innerHeight - 100),
+              left: Math.min(Math.max(10, actionMenu.x - 80), window.innerWidth - 170),
+              background: "#1a1a35",
+              border: "1px solid rgba(255,255,255,0.15)",
+              borderRadius: "12px",
+              padding: "6px",
+              zIndex: 2000,
+              boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+              minWidth: "160px",
+            }}
+          >
+            {editingMsgId !== actionMenu.msgId && (
+              <button
+                onClick={() => editMessage(actionMenu.msgId, actionMenu.msgText, actionMenu.isGroup)}
+                style={{ width: "100%", background: "none", border: "none", color: "#fff", padding: "10px 14px", cursor: "pointer", fontSize: "14px", textAlign: "left", borderRadius: "8px", display: "flex", alignItems: "center", gap: "10px" }}
+                onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.08)"}
+                onMouseLeave={(e) => e.currentTarget.style.background = "none"}
+              >✏️ Edit message</button>
+            )}
+            <button
+              onClick={() => deleteMessage(actionMenu.msgId, actionMenu.isGroup)}
+              style={{ width: "100%", background: "none", border: "none", color: "#f5576c", padding: "10px 14px", cursor: "pointer", fontSize: "14px", textAlign: "left", borderRadius: "8px", display: "flex", alignItems: "center", gap: "10px" }}
+              onMouseEnter={(e) => e.currentTarget.style.background = "rgba(245,87,108,0.1)"}
+              onMouseLeave={(e) => e.currentTarget.style.background = "none"}
+            >🗑️ Delete message</button>
           </div>
         </>
       )}
@@ -1165,41 +1273,70 @@ export default function ChatApp({ currentUser, onLogout }) {
                             <div style={{ maxWidth: "70%", display: "flex", flexDirection: "column", gap: "2px" }}>
                               <div
                                 onMouseDown={(e) => {
-                                  if (msg.optimistic) return;
+                                  if (msg.optimistic || msg.deleted) return;
                                   const x = e.clientX; const y = e.clientY;
                                   longPressTimeout.current = setTimeout(() => {
-                                    setReactionPickerPos({ x, y });
-                                    setReactionPickerMsgId(msg.id);
-                                    setShowAllEmojis(false);
+                                    if (isMe) {
+                                      setActionMenu({ msgId: msg.id, msgText: msg.text, x, y, isGroup: false, isMe: true });
+                                    } else {
+                                      setReactionPickerPos({ x, y });
+                                      setReactionPickerMsgId(msg.id);
+                                      setShowAllEmojis(false);
+                                    }
                                   }, 500);
                                 }}
                                 onMouseUp={() => clearTimeout(longPressTimeout.current)}
                                 onMouseLeave={() => clearTimeout(longPressTimeout.current)}
                                 onTouchStart={(e) => {
-                                  if (msg.optimistic) return;
+                                  if (msg.optimistic || msg.deleted) return;
                                   e.preventDefault();
                                   const x = e.touches[0].clientX; const y = e.touches[0].clientY;
                                   longPressTimeout.current = setTimeout(() => {
-                                    setReactionPickerPos({ x, y });
-                                    setReactionPickerMsgId(msg.id);
-                                    setShowAllEmojis(false);
+                                    if (isMe) {
+                                      setActionMenu({ msgId: msg.id, msgText: msg.text, x, y, isGroup: false, isMe: true });
+                                    } else {
+                                      setReactionPickerPos({ x, y });
+                                      setReactionPickerMsgId(msg.id);
+                                      setShowAllEmojis(false);
+                                    }
                                   }, 500);
                                 }}
                                 onTouchEnd={() => clearTimeout(longPressTimeout.current)}
                                 onContextMenu={(e) => e.preventDefault()}
                                 style={{
                                   ...c.bubble,
-                                  background: isMe ? (msg.status === "failed" ? "rgba(245,87,108,0.3)" : "linear-gradient(135deg, #667eea, #764ba2)") : "rgba(255,255,255,0.08)",
+                                  background: msg.deleted ? "rgba(255,255,255,0.04)" : isMe ? (msg.status === "failed" ? "rgba(245,87,108,0.3)" : "linear-gradient(135deg, #667eea, #764ba2)") : "rgba(255,255,255,0.08)",
                                   borderRadius: isMe ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
                                   opacity: msg.optimistic ? 0.7 : 1,
                                   cursor: "pointer",
                                   userSelect: "none",
                                   WebkitUserSelect: "none",
+                                  fontStyle: msg.deleted ? "italic" : "normal",
                                 }}
                                 className="msg-bubble"
                               >
-                                {msg.text}
+                                {msg.deleted ? (
+                                  <span style={{ color: "rgba(255,255,255,0.3)", fontSize: "13px" }}>🚫 This message was deleted</span>
+                                ) : editingMsgId === msg.id ? (
+                                  <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                                    <input
+                                      autoFocus
+                                      value={editText}
+                                      onChange={(e) => setEditText(e.target.value)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter") saveEdit(msg.id, false);
+                                        if (e.key === "Escape") { setEditingMsgId(null); setEditText(""); }
+                                      }}
+                                      style={{ flex: 1, background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", color: "#fff", padding: "4px 8px", fontSize: "14px", outline: "none" }}
+                                    />
+                                    <span onClick={() => saveEdit(msg.id, false)} style={{ cursor: "pointer", fontSize: "16px" }}>✓</span>
+                                    <span onClick={() => { setEditingMsgId(null); setEditText(""); }} style={{ cursor: "pointer", fontSize: "16px", opacity: 0.5 }}>✕</span>
+                                  </div>
+                                ) : msg.text}
                               </div>
+                              {msg.edited && !msg.deleted && (
+                                <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.25)", textAlign: isMe ? "right" : "left", paddingLeft: "4px", paddingRight: "4px" }}>edited</div>
+                              )}
                               {msg.reactions && Object.keys(msg.reactions).length > 0 && (
                                 <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", justifyContent: isMe ? "flex-end" : "flex-start", paddingLeft: "4px", paddingRight: "4px" }}>
                                   {Object.entries(msg.reactions).map(([emoji, users]) => (
@@ -1268,35 +1405,59 @@ export default function ChatApp({ currentUser, onLogout }) {
                                   WebkitUserSelect: "none",
                                 }}
                                 onMouseDown={(e) => {
-                                  if (msg.optimistic) return;
-                                  const x = e.clientX;
-                                  const y = e.clientY;
+                                  if (msg.optimistic || msg.deleted) return;
+                                  const x = e.clientX; const y = e.clientY;
                                   longPressTimeout.current = setTimeout(() => {
-                                    setReactionPickerPos({ x, y });
-                                    setReactionPickerMsgId(msg.id);
-                                    setShowAllEmojis(false);
+                                    if (isMe) {
+                                      setActionMenu({ msgId: msg.id, msgText: msg.text, x, y, isGroup: true, isMe: true });
+                                    } else {
+                                      setReactionPickerPos({ x, y });
+                                      setReactionPickerMsgId(msg.id);
+                                      setShowAllEmojis(false);
+                                    }
                                   }, 500);
                                 }}
-                                onMouseUp={(e) => {
-                                  clearTimeout(longPressTimeout.current);
-                                }}
+                                onMouseUp={() => clearTimeout(longPressTimeout.current)}
                                 onMouseLeave={() => clearTimeout(longPressTimeout.current)}
                                 onTouchStart={(e) => {
-                                  if (msg.optimistic) return;
+                                  if (msg.optimistic || msg.deleted) return;
                                   e.preventDefault();
-                                  const x = e.touches[0].clientX;
-                                  const y = e.touches[0].clientY;
+                                  const x = e.touches[0].clientX; const y = e.touches[0].clientY;
                                   longPressTimeout.current = setTimeout(() => {
-                                    setReactionPickerPos({ x, y });
-                                    setReactionPickerMsgId(msg.id);
-                                    setShowAllEmojis(false);
+                                    if (isMe) {
+                                      setActionMenu({ msgId: msg.id, msgText: msg.text, x, y, isGroup: true, isMe: true });
+                                    } else {
+                                      setReactionPickerPos({ x, y });
+                                      setReactionPickerMsgId(msg.id);
+                                      setShowAllEmojis(false);
+                                    }
                                   }, 500);
                                 }}
                                 onTouchEnd={() => clearTimeout(longPressTimeout.current)}
                                 onContextMenu={(e) => e.preventDefault()}
                               >
-                                {msg.text}
+                                {msg.deleted ? (
+                                  <span style={{ color: "rgba(255,255,255,0.3)", fontSize: "13px", fontStyle: "italic" }}>🚫 This message was deleted</span>
+                                ) : editingMsgId === msg.id ? (
+                                  <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                                    <input
+                                      autoFocus
+                                      value={editText}
+                                      onChange={(e) => setEditText(e.target.value)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter") saveEdit(msg.id, true);
+                                        if (e.key === "Escape") { setEditingMsgId(null); setEditText(""); }
+                                      }}
+                                      style={{ flex: 1, background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", color: "#fff", padding: "4px 8px", fontSize: "14px", outline: "none" }}
+                                    />
+                                    <span onClick={() => saveEdit(msg.id, true)} style={{ cursor: "pointer", fontSize: "16px" }}>✓</span>
+                                    <span onClick={() => { setEditingMsgId(null); setEditText(""); }} style={{ cursor: "pointer", fontSize: "16px", opacity: 0.5 }}>✕</span>
+                                  </div>
+                                ) : msg.text}
                               </div>
+                              {msg.edited && !msg.deleted && (
+                                <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.25)", textAlign: isMe ? "right" : "left", paddingLeft: "4px" }}>edited</div>
+                              )}
                               {msg.reactions && Object.keys(msg.reactions).length > 0 && (
                                 <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", justifyContent: isMe ? "flex-end" : "flex-start", paddingLeft: "4px", paddingRight: "4px" }}>
                                   {Object.entries(msg.reactions).map(([emoji, users]) => (
