@@ -28,6 +28,7 @@ if (!document.getElementById("chatapp-styles")) {
     input::placeholder { color: rgba(255,255,255,0.3); }
     .msg-bubble { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
     .msg-bubble:active { opacity: 0.85; }
+    @keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
     .user-item:hover { background: rgba(255,255,255,0.04) !important; }
     .modal-overlay {
       position: fixed; inset: 0; background: rgba(0,0,0,0.7);
@@ -71,9 +72,12 @@ export default function ChatApp({ currentUser, onLogout }) {
   const reactionHoverTimeout = useRef(null);
   const longPressTimeout = useRef(null);
   const [reactionPickerPos, setReactionPickerPos] = useState({ x: 0, y: 0 });
-  const [actionMenu, setActionMenu] = useState(null); // { msgId, x, y, isGroup, isMe }
+  const [actionMenu, setActionMenu] = useState(null);
   const [editingMsgId, setEditingMsgId] = useState(null);
   const [editText, setEditText] = useState("");
+  const [swipedMsgId, setSwipedMsgId] = useState(null);
+  const swipeStartX = useRef(null);
+  const swipeStartY = useRef(null);
 
   // ── Create group modal ──
   const [showCreateGroup, setShowCreateGroup] = useState(false);
@@ -722,12 +726,28 @@ export default function ChatApp({ currentUser, onLogout }) {
     setActionMenu(null);
   };
 
-  const openActionMenu = (e, msg, isGroup, isMe) => {
-    if (!isMe || msg.optimistic || msg.deleted) return;
-    const x = e.clientX || e.touches?.[0]?.clientX || 0;
-    const y = e.clientY || e.touches?.[0]?.clientY || 0;
-    setActionMenu({ msgId: msg.id, msgText: msg.text, x, y, isGroup, isMe });
-    setReactionPickerMsgId(null);
+  const handleSwipeStart = (e, msg) => {
+    if (!msg || msg.deleted || msg.optimistic) return;
+    swipeStartX.current = e.touches ? e.touches[0].clientX : e.clientX;
+    swipeStartY.current = e.touches ? e.touches[0].clientY : e.clientY;
+  };
+
+  const handleSwipeEnd = (e, msg, isGroup, isMe) => {
+    if (!isMe || !swipeStartX.current || msg.deleted || msg.optimistic) {
+      swipeStartX.current = null;
+      return;
+    }
+    const endX = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
+    const endY = e.changedTouches ? e.changedTouches[0].clientY : e.clientY;
+    const diffX = swipeStartX.current - endX;
+    const diffY = Math.abs(swipeStartY.current - endY);
+
+    // Only trigger if horizontal swipe > 60px and not mostly vertical
+    if (diffX > 60 && diffY < 40) {
+      setSwipedMsgId(swipedMsgId === msg.id ? null : msg.id);
+      setActionMenu(null);
+    }
+    swipeStartX.current = null;
   };
 
   const myRoleInGroup = groupMembers.find((m) => m.username === currentUser.username)?.role;
@@ -847,45 +867,13 @@ export default function ChatApp({ currentUser, onLogout }) {
         </>
       )}
 
-      {/* ── ACTION MENU (Edit/Delete) ── */}
-      {actionMenu && (
-        <>
-          <div
-            onMouseDown={() => setActionMenu(null)}
-            onTouchStart={() => setActionMenu(null)}
-            style={{ position: "fixed", inset: 0, zIndex: 1999 }}
-          />
-          <div
-            onMouseDown={(e) => e.stopPropagation()}
-            style={{
-              position: "fixed",
-              top: Math.min(actionMenu.y - 10, window.innerHeight - 100),
-              left: Math.min(Math.max(10, actionMenu.x - 80), window.innerWidth - 170),
-              background: "#1a1a35",
-              border: "1px solid rgba(255,255,255,0.15)",
-              borderRadius: "12px",
-              padding: "6px",
-              zIndex: 2000,
-              boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
-              minWidth: "160px",
-            }}
-          >
-            {editingMsgId !== actionMenu.msgId && (
-              <button
-                onClick={() => editMessage(actionMenu.msgId, actionMenu.msgText, actionMenu.isGroup)}
-                style={{ width: "100%", background: "none", border: "none", color: "#fff", padding: "10px 14px", cursor: "pointer", fontSize: "14px", textAlign: "left", borderRadius: "8px", display: "flex", alignItems: "center", gap: "10px" }}
-                onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.08)"}
-                onMouseLeave={(e) => e.currentTarget.style.background = "none"}
-              >✏️ Edit message</button>
-            )}
-            <button
-              onClick={() => deleteMessage(actionMenu.msgId, actionMenu.isGroup)}
-              style={{ width: "100%", background: "none", border: "none", color: "#f5576c", padding: "10px 14px", cursor: "pointer", fontSize: "14px", textAlign: "left", borderRadius: "8px", display: "flex", alignItems: "center", gap: "10px" }}
-              onMouseEnter={(e) => e.currentTarget.style.background = "rgba(245,87,108,0.1)"}
-              onMouseLeave={(e) => e.currentTarget.style.background = "none"}
-            >🗑️ Delete message</button>
-          </div>
-        </>
+      {/* Click outside to close swipe actions */}
+      {swipedMsgId && (
+        <div
+          onMouseDown={() => setSwipedMsgId(null)}
+          onTouchStart={() => setSwipedMsgId(null)}
+          style={{ position: "fixed", inset: 0, zIndex: 5 }}
+        />
       )}
 
       {showAddMembers && activeGroup && (
@@ -1264,44 +1252,58 @@ export default function ChatApp({ currentUser, onLogout }) {
                       {messages.map((msg, i) => {
                         const isMe = (msg.from_user || msg.from) === currentUser.username;
                         return (
-                          <div key={msg.id || i} style={{ ...c.msgRow, justifyContent: isMe ? "flex-end" : "flex-start" }}>
+                          <div key={msg.id || i} style={{ position: "relative", display: "flex", justifyContent: isMe ? "flex-end" : "flex-start", alignItems: "flex-end", gap: "8px" }}>
+                            {/* Swipe action buttons — only for own messages */}
+                            {isMe && swipedMsgId === msg.id && !msg.deleted && (
+                              <div style={{ display: "flex", gap: "6px", alignItems: "center", zIndex: 10, animation: "slideIn 0.2s ease" }}>
+                                <button
+                                  onClick={() => { editMessage(msg.id, msg.text, false); setSwipedMsgId(null); }}
+                                  style={{ background: "rgba(102,126,234,0.2)", border: "1px solid rgba(102,126,234,0.4)", borderRadius: "10px", color: "#667eea", padding: "8px 12px", cursor: "pointer", fontSize: "13px", fontWeight: 600, whiteSpace: "nowrap" }}
+                                >✏️ Edit</button>
+                                <button
+                                  onClick={() => { deleteMessage(msg.id, false); setSwipedMsgId(null); }}
+                                  style={{ background: "rgba(245,87,108,0.15)", border: "1px solid rgba(245,87,108,0.35)", borderRadius: "10px", color: "#f5576c", padding: "8px 12px", cursor: "pointer", fontSize: "13px", fontWeight: 600, whiteSpace: "nowrap" }}
+                                >🗑️ Delete</button>
+                              </div>
+                            )}
                             {!isMe && (
                               <div style={{ ...c.msgAvatar, background: avatarColor(msg.from_user || msg.from) }}>
                                 {(msg.from_user || msg.from)[0].toUpperCase()}
                               </div>
                             )}
-                            <div style={{ maxWidth: "70%", display: "flex", flexDirection: "column", gap: "2px" }}>
+                            <div style={{ maxWidth: "70%", display: "flex", flexDirection: "column", gap: "2px", zIndex: 6 }}>
                               <div
                                 onMouseDown={(e) => {
                                   if (msg.optimistic || msg.deleted) return;
+                                  handleSwipeStart(e, msg);
                                   const x = e.clientX; const y = e.clientY;
                                   longPressTimeout.current = setTimeout(() => {
-                                    if (isMe) {
-                                      setActionMenu({ msgId: msg.id, msgText: msg.text, x, y, isGroup: false, isMe: true });
-                                    } else {
-                                      setReactionPickerPos({ x, y });
-                                      setReactionPickerMsgId(msg.id);
-                                      setShowAllEmojis(false);
-                                    }
+                                    setReactionPickerPos({ x, y });
+                                    setReactionPickerMsgId(msg.id);
+                                    setShowAllEmojis(false);
+                                    setSwipedMsgId(null);
                                   }, 500);
                                 }}
-                                onMouseUp={() => clearTimeout(longPressTimeout.current)}
+                                onMouseUp={(e) => {
+                                  clearTimeout(longPressTimeout.current);
+                                  handleSwipeEnd(e, msg, false, isMe);
+                                }}
                                 onMouseLeave={() => clearTimeout(longPressTimeout.current)}
                                 onTouchStart={(e) => {
                                   if (msg.optimistic || msg.deleted) return;
-                                  e.preventDefault();
+                                  handleSwipeStart(e, msg);
                                   const x = e.touches[0].clientX; const y = e.touches[0].clientY;
                                   longPressTimeout.current = setTimeout(() => {
-                                    if (isMe) {
-                                      setActionMenu({ msgId: msg.id, msgText: msg.text, x, y, isGroup: false, isMe: true });
-                                    } else {
-                                      setReactionPickerPos({ x, y });
-                                      setReactionPickerMsgId(msg.id);
-                                      setShowAllEmojis(false);
-                                    }
+                                    setReactionPickerPos({ x, y });
+                                    setReactionPickerMsgId(msg.id);
+                                    setShowAllEmojis(false);
+                                    setSwipedMsgId(null);
                                   }, 500);
                                 }}
-                                onTouchEnd={() => clearTimeout(longPressTimeout.current)}
+                                onTouchEnd={(e) => {
+                                  clearTimeout(longPressTimeout.current);
+                                  handleSwipeEnd(e, msg, false, isMe);
+                                }}
                                 onContextMenu={(e) => e.preventDefault()}
                                 style={{
                                   ...c.bubble,
@@ -1337,7 +1339,7 @@ export default function ChatApp({ currentUser, onLogout }) {
                               {msg.edited && !msg.deleted && (
                                 <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.25)", textAlign: isMe ? "right" : "left", paddingLeft: "4px", paddingRight: "4px" }}>edited</div>
                               )}
-                              {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                              {!msg.deleted && msg.reactions && Object.keys(msg.reactions).length > 0 && (
                                 <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", justifyContent: isMe ? "flex-end" : "flex-start", paddingLeft: "4px", paddingRight: "4px" }}>
                                   {Object.entries(msg.reactions).map(([emoji, users]) => (
                                     <span key={emoji} onClick={() => toggleReaction(msg.id, emoji, false)} style={{ background: users.includes(currentUser.username) ? "rgba(102,126,234,0.3)" : "rgba(255,255,255,0.08)", border: `1px solid ${users.includes(currentUser.username) ? "rgba(102,126,234,0.5)" : "rgba(255,255,255,0.1)"}`, borderRadius: "12px", padding: "2px 6px", fontSize: "12px", cursor: "pointer" }}>
@@ -1348,7 +1350,7 @@ export default function ChatApp({ currentUser, onLogout }) {
                               )}
                               <div style={{ display: "flex", alignItems: "center", justifyContent: isMe ? "flex-end" : "flex-start", gap: "3px", paddingLeft: "4px", paddingRight: "4px" }}>
                                 <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.2)" }}>{formatTime(msg)}</span>
-                                {isMe && statusTick(msg.status)}
+                                {isMe && !msg.deleted && statusTick(msg.status)}
                               </div>
                             </div>
                           </div>
@@ -1376,7 +1378,20 @@ export default function ChatApp({ currentUser, onLogout }) {
                       {groupMessages.map((msg, i) => {
                         const isMe = msg.from_user === currentUser.username;
                         return (
-                          <div key={msg.id || i} style={{ ...c.msgRow, justifyContent: isMe ? "flex-end" : "flex-start" }}>
+                          <div key={msg.id || i} style={{ position: "relative", display: "flex", justifyContent: isMe ? "flex-end" : "flex-start", alignItems: "flex-end", gap: "8px" }}>
+                            {/* Swipe action buttons for group messages */}
+                            {isMe && swipedMsgId === msg.id && !msg.deleted && (
+                              <div style={{ display: "flex", gap: "6px", alignItems: "center", zIndex: 10 }}>
+                                <button
+                                  onClick={() => { editMessage(msg.id, msg.text, true); setSwipedMsgId(null); }}
+                                  style={{ background: "rgba(102,126,234,0.2)", border: "1px solid rgba(102,126,234,0.4)", borderRadius: "10px", color: "#667eea", padding: "8px 12px", cursor: "pointer", fontSize: "13px", fontWeight: 600, whiteSpace: "nowrap" }}
+                                >✏️ Edit</button>
+                                <button
+                                  onClick={() => { deleteMessage(msg.id, true); setSwipedMsgId(null); }}
+                                  style={{ background: "rgba(245,87,108,0.15)", border: "1px solid rgba(245,87,108,0.35)", borderRadius: "10px", color: "#f5576c", padding: "8px 12px", cursor: "pointer", fontSize: "13px", fontWeight: 600, whiteSpace: "nowrap" }}
+                                >🗑️ Delete</button>
+                              </div>
+                            )}
                             {!isMe && (
                               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
                                 <div style={{ ...c.msgAvatar, background: avatarColor(msg.from_user) }}>
@@ -1384,7 +1399,7 @@ export default function ChatApp({ currentUser, onLogout }) {
                                 </div>
                               </div>
                             )}
-                            <div style={{ maxWidth: "70%", display: "flex", flexDirection: "column", gap: "2px" }}>
+                            <div style={{ maxWidth: "70%", display: "flex", flexDirection: "column", gap: "2px", zIndex: 6 }}>
                               {!isMe && (
                                 <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.35)", paddingLeft: "4px" }}>
                                   @{msg.from_user}
@@ -1406,34 +1421,35 @@ export default function ChatApp({ currentUser, onLogout }) {
                                 }}
                                 onMouseDown={(e) => {
                                   if (msg.optimistic || msg.deleted) return;
+                                  handleSwipeStart(e, msg);
                                   const x = e.clientX; const y = e.clientY;
                                   longPressTimeout.current = setTimeout(() => {
-                                    if (isMe) {
-                                      setActionMenu({ msgId: msg.id, msgText: msg.text, x, y, isGroup: true, isMe: true });
-                                    } else {
-                                      setReactionPickerPos({ x, y });
-                                      setReactionPickerMsgId(msg.id);
-                                      setShowAllEmojis(false);
-                                    }
+                                    setReactionPickerPos({ x, y });
+                                    setReactionPickerMsgId(msg.id);
+                                    setShowAllEmojis(false);
+                                    setSwipedMsgId(null);
                                   }, 500);
                                 }}
-                                onMouseUp={() => clearTimeout(longPressTimeout.current)}
+                                onMouseUp={(e) => {
+                                  clearTimeout(longPressTimeout.current);
+                                  handleSwipeEnd(e, msg, true, isMe);
+                                }}
                                 onMouseLeave={() => clearTimeout(longPressTimeout.current)}
                                 onTouchStart={(e) => {
                                   if (msg.optimistic || msg.deleted) return;
-                                  e.preventDefault();
+                                  handleSwipeStart(e, msg);
                                   const x = e.touches[0].clientX; const y = e.touches[0].clientY;
                                   longPressTimeout.current = setTimeout(() => {
-                                    if (isMe) {
-                                      setActionMenu({ msgId: msg.id, msgText: msg.text, x, y, isGroup: true, isMe: true });
-                                    } else {
-                                      setReactionPickerPos({ x, y });
-                                      setReactionPickerMsgId(msg.id);
-                                      setShowAllEmojis(false);
-                                    }
+                                    setReactionPickerPos({ x, y });
+                                    setReactionPickerMsgId(msg.id);
+                                    setShowAllEmojis(false);
+                                    setSwipedMsgId(null);
                                   }, 500);
                                 }}
-                                onTouchEnd={() => clearTimeout(longPressTimeout.current)}
+                                onTouchEnd={(e) => {
+                                  clearTimeout(longPressTimeout.current);
+                                  handleSwipeEnd(e, msg, true, isMe);
+                                }}
                                 onContextMenu={(e) => e.preventDefault()}
                               >
                                 {msg.deleted ? (
@@ -1458,7 +1474,7 @@ export default function ChatApp({ currentUser, onLogout }) {
                               {msg.edited && !msg.deleted && (
                                 <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.25)", textAlign: isMe ? "right" : "left", paddingLeft: "4px" }}>edited</div>
                               )}
-                              {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                              {!msg.deleted && msg.reactions && Object.keys(msg.reactions).length > 0 && (
                                 <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", justifyContent: isMe ? "flex-end" : "flex-start", paddingLeft: "4px", paddingRight: "4px" }}>
                                   {Object.entries(msg.reactions).map(([emoji, users]) => (
                                     <span key={emoji} onClick={() => toggleReaction(msg.id, emoji, true)} style={{ background: users.includes(currentUser.username) ? "rgba(102,126,234,0.3)" : "rgba(255,255,255,0.08)", border: `1px solid ${users.includes(currentUser.username) ? "rgba(102,126,234,0.5)" : "rgba(255,255,255,0.1)"}`, borderRadius: "12px", padding: "2px 6px", fontSize: "12px", cursor: "pointer" }}>
