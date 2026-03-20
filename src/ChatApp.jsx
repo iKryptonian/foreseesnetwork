@@ -691,6 +691,18 @@ export default function ChatApp({ currentUser, onLogout }) {
     setTimeout(() => inputRef.current?.focus(), 100);
   };
 
+  const scrollToMessage = (msgId) => {
+    const el = document.getElementById(`msg-${msgId}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    // Flash highlight
+    el.style.transition = "background 0.3s";
+    el.style.background = "rgba(102,126,234,0.3)";
+    setTimeout(() => {
+      el.style.background = "transparent";
+    }, 1500);
+  };
+
   const myRoleInGroup = groupMembers.find((m) => m.username === currentUser.username)?.role;
   const isGroupAdmin = myRoleInGroup === "admin";
   const isGroupCreator = activeGroup?.created_by === currentUser.username;
@@ -1242,7 +1254,10 @@ export default function ChatApp({ currentUser, onLogout }) {
                                 className="msg-bubble"
                               >
                                 {msg.reply_to && (
-                                  <div style={{ background: "rgba(0,0,0,0.2)", borderLeft: "3px solid rgba(255,255,255,0.4)", borderRadius: "6px", padding: "5px 8px", marginBottom: "6px", fontSize: "12px" }}>
+                                  <div
+                                    onClick={(e) => { e.stopPropagation(); scrollToMessage(msg.reply_to.id); }}
+                                    style={{ background: "rgba(0,0,0,0.2)", borderLeft: "3px solid rgba(255,255,255,0.4)", borderRadius: "6px", padding: "5px 8px", marginBottom: "6px", fontSize: "12px", cursor: "pointer" }}
+                                  >
                                     <div style={{ color: "rgba(255,255,255,0.6)", fontWeight: 700, marginBottom: "2px" }}>@{msg.reply_to.from_user}</div>
                                     <div style={{ color: "rgba(255,255,255,0.4)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{msg.reply_to.text}</div>
                                   </div>
@@ -1288,7 +1303,7 @@ export default function ChatApp({ currentUser, onLogout }) {
                       {groupMessages.map((msg, i) => {
                         const isMe = msg.from_user === currentUser.username;
                         return (
-                          <div key={msg.id || i} style={{ ...c.msgRow, justifyContent: isMe ? "flex-end" : "flex-start" }}>
+                          <div key={msg.id || i} id={`msg-${msg.id}`} style={{ ...c.msgRow, justifyContent: isMe ? "flex-end" : "flex-start", borderRadius: "8px", transition: "background 0.3s" }}>
                             {!isMe && (
                               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
                                 <div style={{ ...c.msgAvatar, background: avatarColor(msg.from_user) }}>
@@ -1342,7 +1357,10 @@ export default function ChatApp({ currentUser, onLogout }) {
                                 onContextMenu={(e) => e.preventDefault()}
                               >
                                 {msg.reply_to && (
-                                  <div style={{ background: "rgba(0,0,0,0.2)", borderLeft: "3px solid rgba(255,255,255,0.4)", borderRadius: "6px", padding: "5px 8px", marginBottom: "6px", fontSize: "12px" }}>
+                                  <div
+                                    onClick={(e) => { e.stopPropagation(); scrollToMessage(msg.reply_to.id); }}
+                                    style={{ background: "rgba(0,0,0,0.2)", borderLeft: "3px solid rgba(255,255,255,0.4)", borderRadius: "6px", padding: "5px 8px", marginBottom: "6px", fontSize: "12px", cursor: "pointer" }}
+                                  >
                                     <div style={{ color: "rgba(255,255,255,0.6)", fontWeight: 700, marginBottom: "2px" }}>@{msg.reply_to.from_user}</div>
                                     <div style={{ color: "rgba(255,255,255,0.4)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{msg.reply_to.text}</div>
                                   </div>
