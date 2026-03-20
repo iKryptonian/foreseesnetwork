@@ -389,21 +389,37 @@ io.on("connection", (socket) => {
       const result = await pool.query(`SELECT reactions FROM ${table} WHERE id = $1`, [messageId]);
       if (!result.rows.length) return;
 
-      let reactions = result.rows[0].reactions || {};
+      // Parse reactions safely from JSONB
+      let rawReactions = result.rows[0].reactions;
+      if (typeof rawReactions === "string") rawReactions = JSON.parse(rawReactions);
+      const originalReactions = rawReactions || {};
 
-      // Remove user from ANY existing emoji first (one reaction per person)
+      // Deep copy
+      let reactions = JSON.parse(JSON.stringify(originalReactions));
+
+      // Check if user already has THIS emoji before any modification
+      const userCurrentEmojis = Object.keys(originalReactions).filter(e => 
+        (originalReactions[e] || []).includes(username)
+      );
+      const alreadyHadThisEmoji = userCurrentEmojis.includes(emoji);
+
+      console.log(`🎯 Reaction: ${username} clicked ${emoji}, already had: ${alreadyHadThisEmoji}, current: ${userCurrentEmojis}`);
+
+      // Remove user from ALL emojis (enforce one reaction per person)
       for (const key of Object.keys(reactions)) {
-        reactions[key] = reactions[key].filter(u => u !== username);
-        if (reactions[key].length === 0) delete reactions[key];
+        if (Array.isArray(reactions[key])) {
+          reactions[key] = reactions[key].filter(u => u !== username);
+          if (reactions[key].length === 0) delete reactions[key];
+        }
       }
 
-      // If user clicked their current emoji → just remove it (toggle off)
-      // If user clicked a new emoji → add it
-      const alreadyHadThisEmoji = (result.rows[0].reactions?.[emoji] || []).includes(username);
+      // Toggle: if already had this emoji → remove only. If new/different emoji → add
       if (!alreadyHadThisEmoji) {
         if (!reactions[emoji]) reactions[emoji] = [];
         reactions[emoji].push(username);
       }
+
+      console.log(`✅ Final reactions:`, reactions);
 
       await pool.query(`UPDATE ${table} SET reactions = $1 WHERE id = $2`, [JSON.stringify(reactions), messageId]);
 
