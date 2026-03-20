@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-export default function Login({ onNavigateToRegister, onLoginSuccess, onForgotPassword, appDB }) {
+export default function Login({ onNavigateToRegister, onLoginSuccess, onForgotPassword }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
@@ -17,32 +17,32 @@ export default function Login({ onNavigateToRegister, onLoginSuccess, onForgotPa
   };
 
   const handleLogin = async () => {
-  const errs = validate();
-  if (Object.keys(errs).length > 0) { setErrors(errs); return; }
-  setIsLoading(true);
-  setErrors({});
+    const errs = validate();
+    if (Object.keys(errs).length > 0) { setErrors(errs); return; }
+    setIsLoading(true);
+    setErrors({});
 
-  try {
-    const res = await fetch("http://localhost:4000/api/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
-    const data = await res.json();
+    try {
+      const res = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
 
-    if (!res.ok) {
-      setErrors({ [data.field]: data.message });
+      if (!res.ok) {
+        setErrors({ [data.field]: data.message });
+        setIsLoading(false);
+        return;
+      }
+
       setIsLoading(false);
-      return;
+      if (onLoginSuccess) onLoginSuccess(data.user);
+    } catch {
+      setErrors({ global: "Cannot connect to server. Please try again." });
+      setIsLoading(false);
     }
-
-    setIsLoading(false);
-    if (onLoginSuccess) onLoginSuccess(data.user);
-  } catch {
-    setErrors({ global: "Cannot connect to server. Make sure backend is running." });
-    setIsLoading(false);
-  }
-};
+  };
 
   return (
     <div className="auth-page">

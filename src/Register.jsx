@@ -46,7 +46,7 @@ export default function Register({ onNavigateToLogin, onRegisterSuccess, appDB }
 
   const sendOtp = async () => {
   try {
-    const res = await fetch("http://localhost:4000/api/send-otp", {
+    const res = await fetch("/api/send-otp", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, username }),
@@ -108,7 +108,7 @@ export default function Register({ onNavigateToLogin, onRegisterSuccess, appDB }
   }
 
   try {
-    const res = await fetch("http://localhost:4000/api/register", {
+    const res = await fetch("/api/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username, email, password }),
