@@ -442,6 +442,22 @@ io.on("connection", (socket) => {
 
 
 
+  // ── MARK READ ──
+  socket.on("mark_read", async ({ from, to }) => {
+    try {
+      await pool.query(
+        "UPDATE messages SET status = 'read' WHERE from_user = $1 AND to_user = $2 AND status != 'read'",
+        [from, to]
+      );
+      const senderSocketId = userSocketMap[from];
+      if (senderSocketId) {
+        io.to(senderSocketId).emit("messages_read", { by: to });
+      }
+    } catch (err) {
+      console.error("mark_read error:", err);
+    }
+  });
+
   // ── TYPING INDICATORS ──
   socket.on("typing", ({ from, to }) => {
     const recipientSocketId = userSocketMap[to];
