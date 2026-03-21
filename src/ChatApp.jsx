@@ -780,13 +780,13 @@ export default function ChatApp({ currentUser, onLogout }) {
             {(showAllEmojis
               ? [
                   // Smileys
-                  "😀","😃","😄","😁","😆","😅","🤣","😂","🙂","🙃","😉","😊","😇","🥰","😍","🤩","😘","😗","😚","😙",
+                  "🖕","😀","😃","😄","😁","😆","😅","🤣","😂","🙂","🙃","😉","😊","😇","🥰","😍","🤩","😘","😗","😚","😙",
                   "😋","😛","😜","🤪","😝","🤑","🤗","🤭","🤫","🤔","🤐","🤨","😐","😑","😶","😏","😒","🙄","😬","🤥",
                   "😌","😔","😪","🤤","😴","😷","🤒","🤕","🤢","🤮","🤧","🥵","🥶","🥴","😵","🤯","🤠","🥳","😎","🤓",
                   "🧐","😕","😟","🙁","☹️","😮","😯","😲","😳","🥺","😦","😧","😨","😰","😥","😢","😭","😱","😖","😣",
                   "😞","😓","😩","😫","🥱","😤","😡","😠","🤬","😈","👿","💀","☠️","💩","🤡","👹","👺","👻","👽","👾","🤖",
                   // Gestures & People
-                  "🖕","👋","🤚","🖐","✋","🖖","👌","🤌","🤏","✌️","🤞","🤟","🤘","🤙","👈","👉","👆","👇","☝️","👍","👎",
+                  "👋","🤚","🖐","✋","🖖","👌","🤌","🤏","✌️","🤞","🤟","🤘","🤙","👈","👉","👆","👇","☝️","👍","👎",
                   "✊","👊","🤛","🤜","👏","🙌","👐","🤲","🤝","🙏","✍️","💅","🤳","💪","🦾","🫀","🫁","🦷","👀","👁",
                   // Hearts & Love
                   "❤️","🧡","💛","💚","💙","💜","🖤","🤍","🤎","💔","❣️","💕","💞","💓","💗","💖","💘","💝","💟","♥️",
@@ -1261,10 +1261,13 @@ export default function ChatApp({ currentUser, onLogout }) {
                               >
                                 {msg.reply_to && (
                                   <div
-                                    onClick={(e) => { e.stopPropagation(); scrollToMessage(msg.reply_to?.id); }}
+                                    onMouseDown={(e) => { e.stopPropagation(); clearTimeout(longPressTimeout.current); }}
+                                    onMouseUp={(e) => { e.stopPropagation(); scrollToMessage(msg.reply_to?.id); }}
+                                    onTouchStart={(e) => { e.stopPropagation(); clearTimeout(longPressTimeout.current); }}
+                                    onTouchEnd={(e) => { e.stopPropagation(); scrollToMessage(msg.reply_to?.id); }}
                                     style={{ background: "rgba(0,0,0,0.2)", borderLeft: "3px solid rgba(255,255,255,0.4)", borderRadius: "6px", padding: "5px 8px", marginBottom: "6px", fontSize: "12px", cursor: "pointer" }}
                                   >
-                                    <div style={{ color: "rgba(255,255,255,0.6)", fontWeight: 700, marginBottom: "2px" }}>@{msg.reply_to.from_user}</div>
+                                    <div style={{ color: "rgba(255,255,255,0.6)", fontWeight: 700, marginBottom: "2px" }}>↩ @{msg.reply_to.from_user}</div>
                                     <div style={{ color: "rgba(255,255,255,0.4)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{msg.reply_to.text}</div>
                                   </div>
                                 )}
@@ -1364,10 +1367,13 @@ export default function ChatApp({ currentUser, onLogout }) {
                               >
                                 {msg.reply_to && (
                                   <div
-                                    onClick={(e) => { e.stopPropagation(); scrollToMessage(msg.reply_to?.id); }}
+                                    onMouseDown={(e) => { e.stopPropagation(); clearTimeout(longPressTimeout.current); }}
+                                    onMouseUp={(e) => { e.stopPropagation(); scrollToMessage(msg.reply_to?.id); }}
+                                    onTouchStart={(e) => { e.stopPropagation(); clearTimeout(longPressTimeout.current); }}
+                                    onTouchEnd={(e) => { e.stopPropagation(); scrollToMessage(msg.reply_to?.id); }}
                                     style={{ background: "rgba(0,0,0,0.2)", borderLeft: "3px solid rgba(255,255,255,0.4)", borderRadius: "6px", padding: "5px 8px", marginBottom: "6px", fontSize: "12px", cursor: "pointer" }}
                                   >
-                                    <div style={{ color: "rgba(255,255,255,0.6)", fontWeight: 700, marginBottom: "2px" }}>@{msg.reply_to.from_user}</div>
+                                    <div style={{ color: "rgba(255,255,255,0.6)", fontWeight: 700, marginBottom: "2px" }}>↩ @{msg.reply_to.from_user}</div>
                                     <div style={{ color: "rgba(255,255,255,0.4)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{msg.reply_to.text}</div>
                                   </div>
                                 )}
