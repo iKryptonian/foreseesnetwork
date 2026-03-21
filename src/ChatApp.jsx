@@ -804,7 +804,7 @@ export default function ChatApp({ currentUser, onLogout }) {
         <>
           {/* Backdrop */}
           <div
-            onMouseDown={() => { setReactionPickerMsgId(null); setShowAllEmojis(false); }}
+            onMouseDown={() => { setReactionPickerMsgId(null); setShowAllEmojis(false); setSelectedMsg(null); }}
             onTouchStart={() => { setReactionPickerMsgId(null); setShowAllEmojis(false); setSelectedMsg(null); }}
             style={{ position: "fixed", inset: 0, zIndex: 1999 }}
           />
@@ -1323,7 +1323,6 @@ export default function ChatApp({ currentUser, onLogout }) {
                             )}
                             <div style={{ maxWidth: "70%", display: "flex", flexDirection: "column", gap: "2px", }}>
                               <div
-                                onMouseEnter={() => setSelectedMsg({ id: msg.id, text: msg.text, from_user: msg.from_user || msg.from, isGroup: !!activeGroup, isMe })}
                                 onMouseLeave={() => { setSelectedMsg(null); clearTimeout(longPressTimeout.current); }}
                                 onMouseDown={(e) => {
                                   if (msg.optimistic || msg.deleted) return;
@@ -1339,18 +1338,12 @@ export default function ChatApp({ currentUser, onLogout }) {
                                   if (msg.optimistic || msg.deleted) return;
                                   e.preventDefault();
                                   const x = e.touches[0].clientX; const y = e.touches[0].clientY;
-                                  // Show icons immediately on tap
-                                  setSelectedMsg({ id: msg.id, text: msg.text, from_user: msg.from_user || msg.from, isGroup: !!activeGroup, isMe });
-                                  clearTimeout(tapTimeout.current);
-                                  tapTimeout.current = setTimeout(() => setSelectedMsg(null), 3000);
-                                  // Long press → reactions
                                   longPressTimeout.current = setTimeout(() => {
                                     setReactionPickerPos({ x, y });
                                     setReactionPickerMsgId(msg.id);
                                     setShowAllEmojis(false);
-                                    setSelectedMsg(null);
-                                    clearTimeout(tapTimeout.current);
-                                  }, 600);
+                                    setSelectedMsg({ id: msg.id, text: msg.text, from_user: msg.from_user || msg.from, isGroup: false, isMe });
+                                  }, 500);
                                 }}
                                 onTouchEnd={() => clearTimeout(longPressTimeout.current)}
                                 onContextMenu={(e) => e.preventDefault()}
@@ -1462,7 +1455,6 @@ export default function ChatApp({ currentUser, onLogout }) {
                                   userSelect: "none",
                                   WebkitUserSelect: "none",
                                 }}
-                                onMouseEnter={() => setSelectedMsg({ id: msg.id, text: msg.text, from_user: msg.from_user || msg.from, isGroup: !!activeGroup, isMe })}
                                 onMouseLeave={() => { setSelectedMsg(null); clearTimeout(longPressTimeout.current); }}
                                 onMouseDown={(e) => {
                                   if (msg.optimistic || msg.deleted) return;
