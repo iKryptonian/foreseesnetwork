@@ -756,51 +756,7 @@ export default function ChatApp({ currentUser, onLogout }) {
             onTouchStart={() => { setReactionPickerMsgId(null); setShowAllEmojis(false); setSelectedMsg(null); }}
             style={{ position: "fixed", inset: 0, zIndex: 1999 }}
           />
-          {/* Action bar — reply, edit, delete */}
-          {selectedMsg && (
-            <div
-              onMouseDown={(e) => e.stopPropagation()}
-              onTouchStart={(e) => e.stopPropagation()}
-              style={{
-                position: "fixed",
-                bottom: (() => {
-                  const pickerH = showAllEmojis ? 220 : 56;
-                  return reactionPickerPos.y > window.innerHeight / 2
-                    ? window.innerHeight - reactionPickerPos.y + pickerH + 10
-                    : window.innerHeight - reactionPickerPos.y - 10;
-                })(),
-                left: Math.min(Math.max(10, reactionPickerPos.x - 110), window.innerWidth - 230),
-                background: "#1a1a35",
-                border: "1px solid rgba(255,255,255,0.12)",
-                borderRadius: "14px",
-                padding: "6px 8px",
-                zIndex: 2001,
-                display: "flex",
-                gap: "4px",
-                boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
-              }}
-            >
-              <button onClick={() => handleReply(selectedMsg)}
-                style={{ background: "none", border: "none", color: "#fff", padding: "8px 12px", cursor: "pointer", fontSize: "13px", borderRadius: "8px", display: "flex", alignItems: "center", gap: "5px" }}
-                onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.08)"}
-                onMouseLeave={(e) => e.currentTarget.style.background = "none"}
-              >↩ Reply</button>
-              {selectedMsg.isMe && (
-                <button onClick={() => editMessage(selectedMsg.id, selectedMsg.text, selectedMsg.isGroup)}
-                  style={{ background: "none", border: "none", color: "#667eea", padding: "8px 12px", cursor: "pointer", fontSize: "13px", borderRadius: "8px", display: "flex", alignItems: "center", gap: "5px" }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = "rgba(102,126,234,0.1)"}
-                  onMouseLeave={(e) => e.currentTarget.style.background = "none"}
-                >✏️ Edit</button>
-              )}
-              {selectedMsg.isMe && (
-                <button onClick={() => deleteMessage(selectedMsg.id, selectedMsg.isGroup)}
-                  style={{ background: "none", border: "none", color: "#f5576c", padding: "8px 12px", cursor: "pointer", fontSize: "13px", borderRadius: "8px", display: "flex", alignItems: "center", gap: "5px" }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = "rgba(245,87,108,0.1)"}
-                  onMouseLeave={(e) => e.currentTarget.style.background = "none"}
-                >🗑️ Delete</button>
-              )}
-            </div>
-          )}
+          {/* Action bar — reply, edit, delete — rendered INSIDE unified picker below */}
           {/* Unified Picker */}
           <div
             onMouseDown={(e) => e.stopPropagation()}
@@ -809,10 +765,11 @@ export default function ChatApp({ currentUser, onLogout }) {
             style={{
               position: "fixed",
               top: (() => {
+                const actionH = selectedMsg ? 52 : 0;
                 const pickerH = showAllEmojis ? 220 : 56;
                 const headerH = 130;
                 const bottomPad = 80;
-                let top = reactionPickerPos.y - pickerH - 12;
+                let top = reactionPickerPos.y - pickerH - actionH - 12;
                 if (top < headerH) top = reactionPickerPos.y + 20;
                 if (top + pickerH > window.innerHeight - bottomPad) top = window.innerHeight - bottomPad - pickerH;
                 return Math.max(headerH, top);
@@ -827,17 +784,54 @@ export default function ChatApp({ currentUser, onLogout }) {
               background: "#1a1a35",
               border: "1px solid rgba(255,255,255,0.15)",
               borderRadius: "20px",
-              padding: "10px 12px",
+              padding: "0",
               display: "flex",
-              flexWrap: "wrap",
-              gap: "4px",
+              flexDirection: "column",
+              gap: "0",
               zIndex: 2000,
               boxShadow: "0 12px 40px rgba(0,0,0,0.6)",
               width: showAllEmojis ? Math.min(320, window.innerWidth - 20) : "auto",
-              maxHeight: showAllEmojis ? "min(220px, 45vh)" : "none",
-              overflowY: showAllEmojis ? "auto" : "visible",
+              overflow: "hidden",
             }}
           >
+            {/* Action buttons row */}
+            {selectedMsg && (
+              <div style={{ display: "flex", gap: "0", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+                <button
+                  onClick={() => handleReply(selectedMsg)}
+                  style={{ flex: 1, background: "none", border: "none", color: "#fff", padding: "10px 8px", cursor: "pointer", fontSize: "12px", display: "flex", flexDirection: "column", alignItems: "center", gap: "3px" }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.07)"}
+                  onMouseLeave={(e) => e.currentTarget.style.background = "none"}
+                >
+                  <span style={{ fontSize: "18px" }}>↩</span>
+                  <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.5)" }}>Reply</span>
+                </button>
+                {selectedMsg.isMe && (
+                  <button
+                    onClick={() => editMessage(selectedMsg.id, selectedMsg.text, selectedMsg.isGroup)}
+                    style={{ flex: 1, background: "none", border: "none", color: "#667eea", padding: "10px 8px", cursor: "pointer", fontSize: "12px", display: "flex", flexDirection: "column", alignItems: "center", gap: "3px", borderLeft: "1px solid rgba(255,255,255,0.08)" }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = "rgba(102,126,234,0.08)"}
+                    onMouseLeave={(e) => e.currentTarget.style.background = "none"}
+                  >
+                    <span style={{ fontSize: "18px" }}>✏️</span>
+                    <span style={{ fontSize: "10px" }}>Edit</span>
+                  </button>
+                )}
+                {selectedMsg.isMe && (
+                  <button
+                    onClick={() => deleteMessage(selectedMsg.id, selectedMsg.isGroup)}
+                    style={{ flex: 1, background: "none", border: "none", color: "#f5576c", padding: "10px 8px", cursor: "pointer", fontSize: "12px", display: "flex", flexDirection: "column", alignItems: "center", gap: "3px", borderLeft: "1px solid rgba(255,255,255,0.08)" }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = "rgba(245,87,108,0.08)"}
+                    onMouseLeave={(e) => e.currentTarget.style.background = "none"}
+                  >
+                    <span style={{ fontSize: "18px" }}>🗑️</span>
+                    <span style={{ fontSize: "10px" }}>Delete</span>
+                  </button>
+                )}
+              </div>
+            )}
+            {/* Emoji row */}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", padding: "10px 12px", maxHeight: showAllEmojis ? "min(220px, 45vh)" : "none", overflowY: showAllEmojis ? "auto" : "visible" }}>
             {(showAllEmojis
               ? [
                   // Smileys
@@ -894,6 +888,7 @@ export default function ChatApp({ currentUser, onLogout }) {
                 style={{ fontSize: "13px", cursor: "pointer", padding: "4px 10px", borderRadius: "12px", background: "rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.8)", display: "flex", alignItems: "center", fontWeight: 600 }}
               >+</span>
             )}
+            </div>
           </div>
         </>
       )}
@@ -1319,17 +1314,29 @@ export default function ChatApp({ currentUser, onLogout }) {
                                   cursor: "pointer",
                                   userSelect: "none",
                                   WebkitUserSelect: "none",
+                                  maxWidth: "100%",
+                                  boxSizing: "border-box",
                                 }}
                                 className="msg-bubble"
                               >
+                                {/* Reply preview inside bubble */}
+                                {msg.reply_to && !msg.deleted && (() => {
+                                  const rt = typeof msg.reply_to === "string" ? JSON.parse(msg.reply_to) : msg.reply_to;
+                                  return (
+                                    <div style={{ background: "rgba(0,0,0,0.2)", borderLeft: "3px solid rgba(255,255,255,0.4)", borderRadius: "6px", padding: "4px 8px", marginBottom: "6px", fontSize: "12px" }}>
+                                      <div style={{ color: "rgba(255,255,255,0.6)", fontWeight: 700, marginBottom: "1px" }}>↩ @{rt.from_user}</div>
+                                      <div style={{ color: "rgba(255,255,255,0.4)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{rt.text}</div>
+                                    </div>
+                                  );
+                                })()}
                                 {editingMsgId === msg.id ? (
-                                  <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                                  <div style={{ display: "flex", gap: "6px", alignItems: "center", width: "100%", boxSizing: "border-box" }}>
                                     <input autoFocus value={editText} onChange={(e) => setEditText(e.target.value)}
                                       onKeyDown={(e) => { if (e.key === "Enter") saveEdit(msg.id, false); if (e.key === "Escape") { setEditingMsgId(null); setEditText(""); } }}
-                                      style={{ flex: 1, background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", color: "#fff", padding: "4px 8px", fontSize: "14px", outline: "none" }}
+                                      style={{ flex: 1, minWidth: 0, background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", color: "#fff", padding: "4px 8px", fontSize: "14px", outline: "none", width: "100%", boxSizing: "border-box" }}
                                     />
-                                    <span onClick={() => saveEdit(msg.id, false)} style={{ cursor: "pointer" }}>✓</span>
-                                    <span onClick={() => { setEditingMsgId(null); setEditText(""); }} style={{ cursor: "pointer", opacity: 0.5 }}>✕</span>
+                                    <span onClick={() => saveEdit(msg.id, false)} style={{ cursor: "pointer", flexShrink: 0 }}>✓</span>
+                                    <span onClick={() => { setEditingMsgId(null); setEditText(""); }} style={{ cursor: "pointer", opacity: 0.5, flexShrink: 0 }}>✕</span>
                                   </div>
                                 ) : msg.deleted ? (
                                   <span style={{ color: "rgba(255,255,255,0.3)", fontSize: "13px", fontStyle: "italic" }}>🚫 This message was deleted</span>
@@ -1429,14 +1436,24 @@ export default function ChatApp({ currentUser, onLogout }) {
                                 onTouchEnd={() => clearTimeout(longPressTimeout.current)}
                                 onContextMenu={(e) => e.preventDefault()}
                               >
+                                {/* Reply preview inside group bubble */}
+                                {msg.reply_to && !msg.deleted && (() => {
+                                  const rt = typeof msg.reply_to === "string" ? JSON.parse(msg.reply_to) : msg.reply_to;
+                                  return (
+                                    <div style={{ background: "rgba(0,0,0,0.2)", borderLeft: "3px solid rgba(255,255,255,0.4)", borderRadius: "6px", padding: "4px 8px", marginBottom: "6px", fontSize: "12px" }}>
+                                      <div style={{ color: "rgba(255,255,255,0.6)", fontWeight: 700, marginBottom: "1px" }}>↩ @{rt.from_user}</div>
+                                      <div style={{ color: "rgba(255,255,255,0.4)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{rt.text}</div>
+                                    </div>
+                                  );
+                                })()}
                                 {editingMsgId === msg.id ? (
-                                  <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                                  <div style={{ display: "flex", gap: "6px", alignItems: "center", width: "100%", boxSizing: "border-box" }}>
                                     <input autoFocus value={editText} onChange={(e) => setEditText(e.target.value)}
                                       onKeyDown={(e) => { if (e.key === "Enter") saveEdit(msg.id, true); if (e.key === "Escape") { setEditingMsgId(null); setEditText(""); } }}
-                                      style={{ flex: 1, background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", color: "#fff", padding: "4px 8px", fontSize: "14px", outline: "none" }}
+                                      style={{ flex: 1, minWidth: 0, background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", color: "#fff", padding: "4px 8px", fontSize: "14px", outline: "none", width: "100%", boxSizing: "border-box" }}
                                     />
-                                    <span onClick={() => saveEdit(msg.id, true)} style={{ cursor: "pointer" }}>✓</span>
-                                    <span onClick={() => { setEditingMsgId(null); setEditText(""); }} style={{ cursor: "pointer", opacity: 0.5 }}>✕</span>
+                                    <span onClick={() => saveEdit(msg.id, true)} style={{ cursor: "pointer", flexShrink: 0 }}>✓</span>
+                                    <span onClick={() => { setEditingMsgId(null); setEditText(""); }} style={{ cursor: "pointer", opacity: 0.5, flexShrink: 0 }}>✕</span>
                                   </div>
                                 ) : msg.deleted ? (
                                   <span style={{ color: "rgba(255,255,255,0.3)", fontSize: "13px", fontStyle: "italic" }}>🚫 This message was deleted</span>
