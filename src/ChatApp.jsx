@@ -804,8 +804,8 @@ export default function ChatApp({ currentUser, onLogout }) {
         <>
           {/* Backdrop */}
           <div
-            onMouseDown={() => { setReactionPickerMsgId(null); setShowAllEmojis(false); setSelectedMsg(null); }}
-            onTouchStart={() => { setReactionPickerMsgId(null); setShowAllEmojis(false); setSelectedMsg(null); }}
+            onMouseDown={() => { setReactionPickerMsgId(null); setShowAllEmojis(false); }}
+            onTouchStart={() => { setReactionPickerMsgId(null); setShowAllEmojis(false); }}
             style={{ position: "fixed", inset: 0, zIndex: 1999 }}
           />
           {/* Unified Picker */}
@@ -1295,7 +1295,7 @@ export default function ChatApp({ currentUser, onLogout }) {
             <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
               {/* ── MESSAGES ── */}
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                <div ref={messagesContainerRef} style={c.messages}>
+                <div ref={messagesContainerRef} onClick={(e) => { if (e.target === messagesContainerRef.current) setSelectedMsg(null); }} style={c.messages}>
                   {/* 1-on-1 messages */}
                   {activeChatUser && (
                     <>
