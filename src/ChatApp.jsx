@@ -75,6 +75,7 @@ export default function ChatApp({ currentUser, onLogout }) {
   const [showAllEmojis, setShowAllEmojis] = useState(false);
   const reactionHoverTimeout = useRef(null);
   const longPressTimeout = useRef(null);
+  const tapTimeout = useRef(null);
   const [reactionPickerPos, setReactionPickerPos] = useState({ x: 0, y: 0 });
   const [replyTo, setReplyTo] = useState(null);
   const [hoveredMsgId, setHoveredMsgId] = useState(null);
@@ -804,7 +805,7 @@ export default function ChatApp({ currentUser, onLogout }) {
           {/* Backdrop */}
           <div
             onMouseDown={() => { setReactionPickerMsgId(null); setShowAllEmojis(false); }}
-            onTouchStart={() => { setReactionPickerMsgId(null); setShowAllEmojis(false); }}
+            onTouchStart={() => { setReactionPickerMsgId(null); setShowAllEmojis(false); setHoveredMsgId(null); }}
             style={{ position: "fixed", inset: 0, zIndex: 1999 }}
           />
           {/* Unified Picker */}
