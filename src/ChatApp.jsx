@@ -78,7 +78,7 @@ export default function ChatApp({ currentUser, onLogout }) {
   const tapTimeout = useRef(null);
   const [reactionPickerPos, setReactionPickerPos] = useState({ x: 0, y: 0 });
   const [replyTo, setReplyTo] = useState(null);
-  const [hoveredMsgId, setHoveredMsgId] = useState(null);
+  const [selectedMsg, setSelectedMsg] = useState(null); // { id, text, isGroup, isMe }
   const [editingMsgId, setEditingMsgId] = useState(null);
   const [editText, setEditText] = useState("");
 
@@ -805,7 +805,7 @@ export default function ChatApp({ currentUser, onLogout }) {
           {/* Backdrop */}
           <div
             onMouseDown={() => { setReactionPickerMsgId(null); setShowAllEmojis(false); }}
-            onTouchStart={() => { setReactionPickerMsgId(null); setShowAllEmojis(false); setHoveredMsgId(null); }}
+            onTouchStart={() => { setReactionPickerMsgId(null); setShowAllEmojis(false); setSelectedMsg(null); }}
             style={{ position: "fixed", inset: 0, zIndex: 1999 }}
           />
           {/* Unified Picker */}
@@ -1210,6 +1210,22 @@ export default function ChatApp({ currentUser, onLogout }) {
                       )}
                     </div>
                   </div>
+                  {selectedMsg && (
+                    <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                      <button onClick={() => { handleReply({ id: selectedMsg.id, text: selectedMsg.text, from_user: selectedMsg.from_user }); setSelectedMsg(null); }}
+                        title="Reply" style={c.headerActionBtn}>↩</button>
+                      {selectedMsg.isMe && (
+                        <button onClick={() => { editMessage(selectedMsg.id, selectedMsg.text, false); setSelectedMsg(null); }}
+                          title="Edit" style={{ ...c.headerActionBtn, color: "#667eea" }}>✏️</button>
+                      )}
+                      {selectedMsg.isMe && (
+                        <button onClick={() => { deleteMessage(selectedMsg.id, false); setSelectedMsg(null); }}
+                          title="Delete" style={{ ...c.headerActionBtn, color: "#f5576c" }}>🗑️</button>
+                      )}
+                      <button onClick={() => setSelectedMsg(null)}
+                        style={{ ...c.headerActionBtn, fontSize: "11px", opacity: 0.4 }}>✕</button>
+                    </div>
+                  )}
                 </>
               )}
 
@@ -1232,6 +1248,22 @@ export default function ChatApp({ currentUser, onLogout }) {
                       )}
                     </div>
                   </div>
+                  {selectedMsg && (
+                    <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                      <button onClick={() => { handleReply({ id: selectedMsg.id, text: selectedMsg.text, from_user: selectedMsg.from_user }); setSelectedMsg(null); }}
+                        title="Reply" style={c.headerActionBtn}>↩</button>
+                      {selectedMsg.isMe && (
+                        <button onClick={() => { editMessage(selectedMsg.id, selectedMsg.text, true); setSelectedMsg(null); }}
+                          title="Edit" style={{ ...c.headerActionBtn, color: "#667eea" }}>✏️</button>
+                      )}
+                      {selectedMsg.isMe && (
+                        <button onClick={() => { deleteMessage(selectedMsg.id, true); setSelectedMsg(null); }}
+                          title="Delete" style={{ ...c.headerActionBtn, color: "#f5576c" }}>🗑️</button>
+                      )}
+                      <button onClick={() => setSelectedMsg(null)}
+                        style={{ ...c.headerActionBtn, fontSize: "11px", opacity: 0.4 }}>✕</button>
+                    </div>
+                  )}
                   <div style={{ display: "flex", gap: "6px" }}>
                     <button
                       className="members-btn"
@@ -1291,8 +1323,8 @@ export default function ChatApp({ currentUser, onLogout }) {
                             )}
                             <div style={{ maxWidth: "70%", display: "flex", flexDirection: "column", gap: "2px", }}>
                               <div
-                                onMouseEnter={() => setHoveredMsgId(msg.id)}
-                                onMouseLeave={() => { setHoveredMsgId(null); clearTimeout(longPressTimeout.current); }}
+                                onMouseEnter={() => setSelectedMsg({ id: msg.id, text: msg.text, from_user: msg.from_user || msg.from, isGroup: !!activeGroup, isMe })}
+                                onMouseLeave={() => { setSelectedMsg(null); clearTimeout(longPressTimeout.current); }}
                                 onMouseDown={(e) => {
                                   if (msg.optimistic || msg.deleted) return;
                                   const x = e.clientX; const y = e.clientY;
@@ -1306,14 +1338,19 @@ export default function ChatApp({ currentUser, onLogout }) {
                                 onTouchStart={(e) => {
                                   if (msg.optimistic || msg.deleted) return;
                                   e.preventDefault();
-                                  setHoveredMsgId(msg.id);
                                   const x = e.touches[0].clientX; const y = e.touches[0].clientY;
+                                  // Show icons immediately on tap
+                                  setSelectedMsg({ id: msg.id, text: msg.text, from_user: msg.from_user || msg.from, isGroup: !!activeGroup, isMe });
+                                  clearTimeout(tapTimeout.current);
+                                  tapTimeout.current = setTimeout(() => setSelectedMsg(null), 3000);
+                                  // Long press → reactions
                                   longPressTimeout.current = setTimeout(() => {
                                     setReactionPickerPos({ x, y });
                                     setReactionPickerMsgId(msg.id);
                                     setShowAllEmojis(false);
-                                    setHoveredMsgId(null);
-                                  }, 500);
+                                    setSelectedMsg(null);
+                                    clearTimeout(tapTimeout.current);
+                                  }, 600);
                                 }}
                                 onTouchEnd={() => clearTimeout(longPressTimeout.current)}
                                 onContextMenu={(e) => e.preventDefault()}
@@ -1425,8 +1462,8 @@ export default function ChatApp({ currentUser, onLogout }) {
                                   userSelect: "none",
                                   WebkitUserSelect: "none",
                                 }}
-                                onMouseEnter={() => setHoveredMsgId(msg.id)}
-                                onMouseLeave={() => { setHoveredMsgId(null); clearTimeout(longPressTimeout.current); }}
+                                onMouseEnter={() => setSelectedMsg({ id: msg.id, text: msg.text, from_user: msg.from_user || msg.from, isGroup: !!activeGroup, isMe })}
+                                onMouseLeave={() => { setSelectedMsg(null); clearTimeout(longPressTimeout.current); }}
                                 onMouseDown={(e) => {
                                   if (msg.optimistic || msg.deleted) return;
                                   const x = e.clientX; const y = e.clientY;
@@ -1440,13 +1477,13 @@ export default function ChatApp({ currentUser, onLogout }) {
                                 onTouchStart={(e) => {
                                   if (msg.optimistic || msg.deleted) return;
                                   e.preventDefault();
-                                  setHoveredMsgId(msg.id);
+                                  setSelectedMsg({ id: msg.id, text: msg.text, from_user: msg.from_user || msg.from, isGroup: !!activeGroup, isMe });
                                   const x = e.touches[0].clientX; const y = e.touches[0].clientY;
                                   longPressTimeout.current = setTimeout(() => {
                                     setReactionPickerPos({ x, y });
                                     setReactionPickerMsgId(msg.id);
                                     setShowAllEmojis(false);
-                                    setHoveredMsgId(null);
+                                    setSelectedMsg(null);
                                   }, 500);
                                 }}
                                 onTouchEnd={() => clearTimeout(longPressTimeout.current)}
@@ -1675,4 +1712,5 @@ const c = {
   inputBar: { display: "flex", gap: "10px", padding: "12px 16px", background: "rgba(19,19,42,0.98)", borderTop: "1px solid rgba(255,255,255,0.07)", flexShrink: 0 },
   input: { flex: 1, background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px", color: "#fff", fontSize: "14px", padding: "12px 16px", outline: "none" },
   sendBtn: { width: "46px", height: "46px", borderRadius: "12px", background: "linear-gradient(135deg, #667eea, #764ba2)", border: "none", color: "#fff", fontSize: "18px", cursor: "pointer", flexShrink: 0, transition: "opacity 0.2s" },
+  headerActionBtn: { background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: "8px", color: "#fff", padding: "6px 10px", cursor: "pointer", fontSize: "16px", display: "flex", alignItems: "center", justifyContent: "center" },
 };
