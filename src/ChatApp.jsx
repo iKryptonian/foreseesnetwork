@@ -1294,6 +1294,7 @@ export default function ChatApp({ currentUser, onLogout }) {
                                     setReactionPickerPos({ x, y });
                                     setReactionPickerMsgId(msg.id);
                                     setShowAllEmojis(false);
+                                    setSelectedMsg({ id: msg.id, text: msg.text, from_user: msg.from_user || msg.from, isGroup: false, isMe });
                                   }, 500);
                                 }}
                                 onMouseUp={() => clearTimeout(longPressTimeout.current)}
@@ -1305,6 +1306,7 @@ export default function ChatApp({ currentUser, onLogout }) {
                                     setReactionPickerPos({ x, y });
                                     setReactionPickerMsgId(msg.id);
                                     setShowAllEmojis(false);
+                                    setSelectedMsg({ id: msg.id, text: msg.text, from_user: msg.from_user || msg.from, isGroup: false, isMe });
                                   }, 500);
                                 }}
                                 onTouchEnd={() => clearTimeout(longPressTimeout.current)}
@@ -1317,10 +1319,40 @@ export default function ChatApp({ currentUser, onLogout }) {
                                   cursor: "pointer",
                                   userSelect: "none",
                                   WebkitUserSelect: "none",
-                                                                  }}
+                                }}
                                 className="msg-bubble"
-                              >{msg.text}
+                              >
+                                {editingMsgId === msg.id ? (
+                                  <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                                    <input autoFocus value={editText} onChange={(e) => setEditText(e.target.value)}
+                                      onKeyDown={(e) => { if (e.key === "Enter") saveEdit(msg.id, false); if (e.key === "Escape") { setEditingMsgId(null); setEditText(""); } }}
+                                      style={{ flex: 1, background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", color: "#fff", padding: "4px 8px", fontSize: "14px", outline: "none" }}
+                                    />
+                                    <span onClick={() => saveEdit(msg.id, false)} style={{ cursor: "pointer" }}>✓</span>
+                                    <span onClick={() => { setEditingMsgId(null); setEditText(""); }} style={{ cursor: "pointer", opacity: 0.5 }}>✕</span>
+                                  </div>
+                                ) : msg.deleted ? (
+                                  <span style={{ color: "rgba(255,255,255,0.3)", fontSize: "13px", fontStyle: "italic" }}>🚫 This message was deleted</span>
+                                ) : msg.text}
                               </div>
+                              {msg.edited && !msg.deleted && <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.25)", textAlign: isMe ? "right" : "left", paddingLeft: "4px" }}>edited</div>}
+                              {!msg.deleted && msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", justifyContent: isMe ? "flex-end" : "flex-start", paddingLeft: "4px", paddingRight: "4px" }}>
+                                  {Object.entries(msg.reactions).map(([emoji, users]) => (
+                                    <span key={emoji} onClick={() => toggleReaction(msg.id, emoji, false)} style={{ background: users.includes(currentUser.username) ? "rgba(102,126,234,0.3)" : "rgba(255,255,255,0.08)", border: `1px solid ${users.includes(currentUser.username) ? "rgba(102,126,234,0.5)" : "rgba(255,255,255,0.1)"}`, borderRadius: "12px", padding: "2px 6px", fontSize: "12px", cursor: "pointer" }}>
+                                      {emoji} {users.length}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: isMe ? "flex-end" : "flex-start", gap: "3px", paddingLeft: "4px", paddingRight: "4px" }}>
+                                <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.2)" }}>{formatTime(msg)}</span>
+                                {isMe && !msg.deleted && statusTick(msg.status)}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </>
                   )}
 
@@ -1379,6 +1411,7 @@ export default function ChatApp({ currentUser, onLogout }) {
                                     setReactionPickerPos({ x, y });
                                     setReactionPickerMsgId(msg.id);
                                     setShowAllEmojis(false);
+                                    setSelectedMsg({ id: msg.id, text: msg.text, from_user: msg.from_user, isGroup: true, isMe });
                                   }, 500);
                                 }}
                                 onMouseUp={() => clearTimeout(longPressTimeout.current)}
@@ -1390,12 +1423,42 @@ export default function ChatApp({ currentUser, onLogout }) {
                                     setReactionPickerPos({ x, y });
                                     setReactionPickerMsgId(msg.id);
                                     setShowAllEmojis(false);
+                                    setSelectedMsg({ id: msg.id, text: msg.text, from_user: msg.from_user, isGroup: true, isMe });
                                   }, 500);
                                 }}
                                 onTouchEnd={() => clearTimeout(longPressTimeout.current)}
                                 onContextMenu={(e) => e.preventDefault()}
-                              >{msg.text}
+                              >
+                                {editingMsgId === msg.id ? (
+                                  <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                                    <input autoFocus value={editText} onChange={(e) => setEditText(e.target.value)}
+                                      onKeyDown={(e) => { if (e.key === "Enter") saveEdit(msg.id, true); if (e.key === "Escape") { setEditingMsgId(null); setEditText(""); } }}
+                                      style={{ flex: 1, background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", color: "#fff", padding: "4px 8px", fontSize: "14px", outline: "none" }}
+                                    />
+                                    <span onClick={() => saveEdit(msg.id, true)} style={{ cursor: "pointer" }}>✓</span>
+                                    <span onClick={() => { setEditingMsgId(null); setEditText(""); }} style={{ cursor: "pointer", opacity: 0.5 }}>✕</span>
+                                  </div>
+                                ) : msg.deleted ? (
+                                  <span style={{ color: "rgba(255,255,255,0.3)", fontSize: "13px", fontStyle: "italic" }}>🚫 This message was deleted</span>
+                                ) : msg.text}
                               </div>
+                              {msg.edited && !msg.deleted && <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.25)", textAlign: isMe ? "right" : "left", paddingLeft: "4px" }}>edited</div>}
+                              {!msg.deleted && msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", justifyContent: isMe ? "flex-end" : "flex-start", paddingLeft: "4px", paddingRight: "4px" }}>
+                                  {Object.entries(msg.reactions).map(([emoji, users]) => (
+                                    <span key={emoji} onClick={() => toggleReaction(msg.id, emoji, true)} style={{ background: users.includes(currentUser.username) ? "rgba(102,126,234,0.3)" : "rgba(255,255,255,0.08)", border: `1px solid ${users.includes(currentUser.username) ? "rgba(102,126,234,0.5)" : "rgba(255,255,255,0.1)"}`, borderRadius: "12px", padding: "2px 6px", fontSize: "12px", cursor: "pointer" }}>
+                                      {emoji} {users.length}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: isMe ? "flex-end" : "flex-start", gap: "3px", paddingLeft: "4px" }}>
+                                <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.2)" }}>{formatTime(msg)}</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </>
                   )}
 
