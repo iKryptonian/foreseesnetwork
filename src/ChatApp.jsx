@@ -76,7 +76,7 @@ export default function ChatApp({ currentUser, onLogout }) {
   const reactionHoverTimeout = useRef(null);
   const longPressTimeout = useRef(null);
   const [reactionPickerPos, setReactionPickerPos] = useState({ x: 0, y: 0 });
-  const [msgActions, setMsgActions] = useState(null); // { id, text, isMe, isGroup }
+  const [selectedMsg, setSelectedMsg] = useState(null); // { id, text, from_user, isGroup, isMe }
 
 
   // ── Create group modal ──
@@ -700,7 +700,7 @@ export default function ChatApp({ currentUser, onLogout }) {
 
   const handleReply = (msg) => {
     setReplyTo({ id: msg.id, text: msg.text, from_user: msg.from_user || msg.from });
-    setMsgActions(null);
+    setSelectedMsg(null);
     setReactionPickerMsgId(null);
     setTimeout(() => inputRef.current?.focus(), 100);
   };
@@ -708,7 +708,7 @@ export default function ChatApp({ currentUser, onLogout }) {
   const editMessage = (msgId, currentText, isGroup) => {
     setEditingMsgId(msgId);
     setEditText(currentText);
-    setMsgActions(null);
+    setSelectedMsg(null);
     setReactionPickerMsgId(null);
   };
 
@@ -721,7 +721,7 @@ export default function ChatApp({ currentUser, onLogout }) {
 
   const deleteMessage = (msgId, isGroup) => {
     socket.emit("delete_message", { messageId: msgId, username: currentUser.username, isGroup: !!isGroup, groupId: activeGroup?.id });
-    setMsgActions(null);
+    setSelectedMsg(null);
     setReactionPickerMsgId(null);
   };
 
@@ -752,12 +752,12 @@ export default function ChatApp({ currentUser, onLogout }) {
         <>
           {/* Backdrop */}
           <div
-            onMouseDown={() => { setReactionPickerMsgId(null); setShowAllEmojis(false); setMsgActions(null); }}
-            onTouchStart={() => { setReactionPickerMsgId(null); setShowAllEmojis(false); setMsgActions(null); }}
+            onMouseDown={() => { setReactionPickerMsgId(null); setShowAllEmojis(false); setSelectedMsg(null); }}
+            onTouchStart={() => { setReactionPickerMsgId(null); setShowAllEmojis(false); setSelectedMsg(null); }}
             style={{ position: "fixed", inset: 0, zIndex: 1999 }}
           />
           {/* Action bar — reply, edit, delete */}
-          {msgActions && (
+          {selectedMsg && (
             <div
               onMouseDown={(e) => e.stopPropagation()}
               onTouchStart={(e) => e.stopPropagation()}
@@ -780,20 +780,20 @@ export default function ChatApp({ currentUser, onLogout }) {
                 boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
               }}
             >
-              <button onClick={() => handleReply(msgActions)}
+              <button onClick={() => handleReply(selectedMsg)}
                 style={{ background: "none", border: "none", color: "#fff", padding: "8px 12px", cursor: "pointer", fontSize: "13px", borderRadius: "8px", display: "flex", alignItems: "center", gap: "5px" }}
                 onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.08)"}
                 onMouseLeave={(e) => e.currentTarget.style.background = "none"}
               >↩ Reply</button>
-              {msgActions.isMe && (
-                <button onClick={() => editMessage(msgActions.id, msgActions.text, msgActions.isGroup)}
+              {selectedMsg.isMe && (
+                <button onClick={() => editMessage(selectedMsg.id, selectedMsg.text, selectedMsg.isGroup)}
                   style={{ background: "none", border: "none", color: "#667eea", padding: "8px 12px", cursor: "pointer", fontSize: "13px", borderRadius: "8px", display: "flex", alignItems: "center", gap: "5px" }}
                   onMouseEnter={(e) => e.currentTarget.style.background = "rgba(102,126,234,0.1)"}
                   onMouseLeave={(e) => e.currentTarget.style.background = "none"}
                 >✏️ Edit</button>
               )}
-              {msgActions.isMe && (
-                <button onClick={() => deleteMessage(msgActions.id, msgActions.isGroup)}
+              {selectedMsg.isMe && (
+                <button onClick={() => deleteMessage(selectedMsg.id, selectedMsg.isGroup)}
                   style={{ background: "none", border: "none", color: "#f5576c", padding: "8px 12px", cursor: "pointer", fontSize: "13px", borderRadius: "8px", display: "flex", alignItems: "center", gap: "5px" }}
                   onMouseEnter={(e) => e.currentTarget.style.background = "rgba(245,87,108,0.1)"}
                   onMouseLeave={(e) => e.currentTarget.style.background = "none"}
