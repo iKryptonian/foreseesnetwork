@@ -725,6 +725,27 @@ export default function ChatApp({ currentUser, onLogout }) {
     setReactionPickerMsgId(null);
   };
 
+  const messagesContainerRef = useRef(null);
+
+  const scrollToMessage = (msgId) => {
+    if (!msgId) return;
+    const id = String(msgId);
+    let el = document.getElementById(`msg-${id}`);
+    if (!el) el = document.getElementById(`msg-${parseInt(id)}`);
+    if (!el) return;
+    const container = messagesContainerRef.current;
+    if (container) {
+      const containerRect = container.getBoundingClientRect();
+      const elRect = el.getBoundingClientRect();
+      const offset = elRect.top - containerRect.top - (containerRect.height / 2) + (elRect.height / 2);
+      container.scrollBy({ top: offset, behavior: "smooth" });
+    }
+    // Flash highlight like WhatsApp
+    el.style.transition = "background 0.1s";
+    el.style.background = "rgba(102,126,234,0.35)";
+    setTimeout(() => { el.style.transition = "background 0.6s"; el.style.background = ""; }, 600);
+  };
+
   const myRoleInGroup = groupMembers.find((m) => m.username === currentUser.username)?.role;
   const isGroupAdmin = myRoleInGroup === "admin";
   const isGroupCreator = activeGroup?.created_by === currentUser.username;
@@ -1253,7 +1274,7 @@ export default function ChatApp({ currentUser, onLogout }) {
             <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
               {/* ── MESSAGES ── */}
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                <div style={c.messages}>
+                <div ref={messagesContainerRef} style={c.messages}>
                   {/* 1-on-1 messages */}
                   {activeChatUser && (
                     <>
@@ -1273,7 +1294,7 @@ export default function ChatApp({ currentUser, onLogout }) {
                       {messages.map((msg, i) => {
                         const isMe = (msg.from_user || msg.from) === currentUser.username;
                         return (
-                          <div key={msg.id || i} style={{ ...c.msgRow, justifyContent: isMe ? "flex-end" : "flex-start" }}>
+                          <div key={msg.id || i} id={`msg-${msg.id}`} style={{ ...c.msgRow, justifyContent: isMe ? "flex-end" : "flex-start", borderRadius: "8px", transition: "background 0.6s" }}>
                             {!isMe && (
                               <div style={{ ...c.msgAvatar, background: avatarColor(msg.from_user || msg.from) }}>
                                 {(msg.from_user || msg.from)[0].toUpperCase()}
@@ -1323,7 +1344,13 @@ export default function ChatApp({ currentUser, onLogout }) {
                                 {msg.reply_to && !msg.deleted && (() => {
                                   const rt = typeof msg.reply_to === "string" ? JSON.parse(msg.reply_to) : msg.reply_to;
                                   return (
-                                    <div style={{ background: "rgba(0,0,0,0.2)", borderLeft: "3px solid rgba(255,255,255,0.4)", borderRadius: "6px", padding: "4px 8px", marginBottom: "6px", fontSize: "12px" }}>
+                                    <div
+                                      onMouseDown={(e) => { e.stopPropagation(); clearTimeout(longPressTimeout.current); }}
+                                      onMouseUp={(e) => { e.stopPropagation(); scrollToMessage(rt.id); }}
+                                      onTouchStart={(e) => { e.stopPropagation(); clearTimeout(longPressTimeout.current); }}
+                                      onTouchEnd={(e) => { e.stopPropagation(); scrollToMessage(rt.id); }}
+                                      style={{ background: "rgba(0,0,0,0.2)", borderLeft: "3px solid rgba(255,255,255,0.4)", borderRadius: "6px", padding: "4px 8px", marginBottom: "6px", fontSize: "12px", cursor: "pointer" }}
+                                    >
                                       <div style={{ color: "rgba(255,255,255,0.6)", fontWeight: 700, marginBottom: "1px" }}>↩ @{rt.from_user}</div>
                                       <div style={{ color: "rgba(255,255,255,0.4)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{rt.text}</div>
                                     </div>
@@ -1440,7 +1467,13 @@ export default function ChatApp({ currentUser, onLogout }) {
                                 {msg.reply_to && !msg.deleted && (() => {
                                   const rt = typeof msg.reply_to === "string" ? JSON.parse(msg.reply_to) : msg.reply_to;
                                   return (
-                                    <div style={{ background: "rgba(0,0,0,0.2)", borderLeft: "3px solid rgba(255,255,255,0.4)", borderRadius: "6px", padding: "4px 8px", marginBottom: "6px", fontSize: "12px" }}>
+                                    <div
+                                      onMouseDown={(e) => { e.stopPropagation(); clearTimeout(longPressTimeout.current); }}
+                                      onMouseUp={(e) => { e.stopPropagation(); scrollToMessage(rt.id); }}
+                                      onTouchStart={(e) => { e.stopPropagation(); clearTimeout(longPressTimeout.current); }}
+                                      onTouchEnd={(e) => { e.stopPropagation(); scrollToMessage(rt.id); }}
+                                      style={{ background: "rgba(0,0,0,0.2)", borderLeft: "3px solid rgba(255,255,255,0.4)", borderRadius: "6px", padding: "4px 8px", marginBottom: "6px", fontSize: "12px", cursor: "pointer" }}
+                                    >
                                       <div style={{ color: "rgba(255,255,255,0.6)", fontWeight: 700, marginBottom: "1px" }}>↩ @{rt.from_user}</div>
                                       <div style={{ color: "rgba(255,255,255,0.4)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{rt.text}</div>
                                     </div>
