@@ -76,7 +76,10 @@ export default function ChatApp({ currentUser, onLogout }) {
   const reactionHoverTimeout = useRef(null);
   const longPressTimeout = useRef(null);
   const [reactionPickerPos, setReactionPickerPos] = useState({ x: 0, y: 0 });
-  const [replyTo, setReplyTo] = useState(null); // { id, text, from_user, isGroup }
+  const [replyTo, setReplyTo] = useState(null);
+  const [hoveredMsgId, setHoveredMsgId] = useState(null);
+  const [editingMsgId, setEditingMsgId] = useState(null);
+  const [editText, setEditText] = useState("");
 
   // ── Create group modal ──
   const [showCreateGroup, setShowCreateGroup] = useState(false);
@@ -273,6 +276,22 @@ export default function ChatApp({ currentUser, onLogout }) {
       );
     });
 
+    socket.on("message_edited", ({ messageId, newText, isGroup }) => {
+      if (isGroup) {
+        setGroupMessages((prev) => prev.map((m) => m.id === messageId ? { ...m, text: newText, edited: true } : m));
+      } else {
+        setMessages((prev) => prev.map((m) => m.id === messageId ? { ...m, text: newText, edited: true } : m));
+      }
+    });
+
+    socket.on("message_deleted", ({ messageId, isGroup }) => {
+      if (isGroup) {
+        setGroupMessages((prev) => prev.map((m) => m.id === messageId ? { ...m, text: "This message was deleted", deleted: true, reactions: {} } : m));
+      } else {
+        setMessages((prev) => prev.map((m) => m.id === messageId ? { ...m, text: "This message was deleted", deleted: true, reactions: {} } : m));
+      }
+    });
+
     socket.on("reaction_updated", ({ messageId, reactions, isGroup }) => {
       if (isGroup) {
         setGroupMessages((prev) =>
@@ -318,6 +337,8 @@ export default function ChatApp({ currentUser, onLogout }) {
       socket.off("member_left");
       socket.off("members_added");
       socket.off("reaction_updated");
+      socket.off("message_edited");
+      socket.off("message_deleted");
 
       socket.off("group_typing");
       socket.off("group_stop_typing");
@@ -695,6 +716,35 @@ export default function ChatApp({ currentUser, onLogout }) {
       isGroup: !!isGroup,
     });
     // Keep picker open so user can add multiple reactions
+  };
+
+  const editMessage = (msgId, currentText, isGroup) => {
+    setEditingMsgId(msgId);
+    setEditText(currentText);
+    setMsgMenu(null);
+  };
+
+  const saveEdit = (msgId, isGroup) => {
+    if (!editText.trim()) return;
+    socket.emit("edit_message", {
+      messageId: msgId,
+      newText: editText.trim(),
+      username: currentUser.username,
+      isGroup: !!isGroup,
+      groupId: activeGroup?.id,
+    });
+    setEditingMsgId(null);
+    setEditText("");
+  };
+
+  const deleteMessage = (msgId, isGroup) => {
+    socket.emit("delete_message", {
+      messageId: msgId,
+      username: currentUser.username,
+      isGroup: !!isGroup,
+      groupId: activeGroup?.id,
+    });
+    setMsgMenu(null);
   };
 
   const handleReply = (msg) => {
@@ -1240,9 +1290,10 @@ export default function ChatApp({ currentUser, onLogout }) {
                             )}
                             <div style={{ maxWidth: "70%", display: "flex", flexDirection: "column", gap: "2px", }}>
                               <div
-                                onDoubleClick={() => !msg.optimistic && handleReply(msg)}
+                                onMouseEnter={() => setHoveredMsgId(msg.id)}
+                                onMouseLeave={() => { setHoveredMsgId(null); clearTimeout(longPressTimeout.current); }}
                                 onMouseDown={(e) => {
-                                  if (msg.optimistic) return;
+                                  if (msg.optimistic || msg.deleted) return;
                                   const x = e.clientX; const y = e.clientY;
                                   longPressTimeout.current = setTimeout(() => {
                                     setReactionPickerPos({ x, y });
@@ -1251,15 +1302,16 @@ export default function ChatApp({ currentUser, onLogout }) {
                                   }, 500);
                                 }}
                                 onMouseUp={() => clearTimeout(longPressTimeout.current)}
-                                onMouseLeave={() => clearTimeout(longPressTimeout.current)}
                                 onTouchStart={(e) => {
-                                  if (msg.optimistic) return;
+                                  if (msg.optimistic || msg.deleted) return;
                                   e.preventDefault();
+                                  setHoveredMsgId(msg.id);
                                   const x = e.touches[0].clientX; const y = e.touches[0].clientY;
                                   longPressTimeout.current = setTimeout(() => {
                                     setReactionPickerPos({ x, y });
                                     setReactionPickerMsgId(msg.id);
                                     setShowAllEmojis(false);
+                                    setHoveredMsgId(null);
                                   }, 500);
                                 }}
                                 onTouchEnd={() => clearTimeout(longPressTimeout.current)}
@@ -1289,8 +1341,22 @@ export default function ChatApp({ currentUser, onLogout }) {
                                     <div style={{ color: "rgba(255,255,255,0.4)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{msg.reply_to.text}</div>
                                   </div>
                                 )}
-                                {msg.text}
+                                {editingMsgId === msg.id ? (
+                                  <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                                    <input autoFocus value={editText} onChange={(e) => setEditText(e.target.value)}
+                                      onKeyDown={(e) => { if (e.key === "Enter") saveEdit(msg.id, false); if (e.key === "Escape") { setEditingMsgId(null); setEditText(""); } }}
+                                      style={{ flex: 1, background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", color: "#fff", padding: "4px 8px", fontSize: "14px", outline: "none" }}
+                                    />
+                                    <span onClick={() => saveEdit(msg.id, false)} style={{ cursor: "pointer", fontSize: "16px" }}>✓</span>
+                                    <span onClick={() => { setEditingMsgId(null); setEditText(""); }} style={{ cursor: "pointer", fontSize: "14px", opacity: 0.5 }}>✕</span>
+                                  </div>
+                                ) : msg.deleted ? (
+                                  <span style={{ color: "rgba(255,255,255,0.3)", fontSize: "13px", fontStyle: "italic" }}>🚫 This message was deleted</span>
+                                ) : msg.text}
                               </div>
+                              {msg.edited && !msg.deleted && (
+                                <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.25)", textAlign: isMe ? "right" : "left", paddingLeft: "4px" }}>edited</div>
+                              )}
                               {!msg.deleted && msg.reactions && Object.keys(msg.reactions).length > 0 && (
                                 <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", justifyContent: isMe ? "flex-end" : "flex-start", paddingLeft: "4px", paddingRight: "4px" }}>
                                   {Object.entries(msg.reactions).map(([emoji, users]) => (
@@ -1358,9 +1424,10 @@ export default function ChatApp({ currentUser, onLogout }) {
                                   userSelect: "none",
                                   WebkitUserSelect: "none",
                                 }}
-                                onDoubleClick={() => !msg.optimistic && handleReply(msg)}
+                                onMouseEnter={() => setHoveredMsgId(msg.id)}
+                                onMouseLeave={() => { setHoveredMsgId(null); clearTimeout(longPressTimeout.current); }}
                                 onMouseDown={(e) => {
-                                  if (msg.optimistic) return;
+                                  if (msg.optimistic || msg.deleted) return;
                                   const x = e.clientX; const y = e.clientY;
                                   longPressTimeout.current = setTimeout(() => {
                                     setReactionPickerPos({ x, y });
@@ -1369,15 +1436,16 @@ export default function ChatApp({ currentUser, onLogout }) {
                                   }, 500);
                                 }}
                                 onMouseUp={() => clearTimeout(longPressTimeout.current)}
-                                onMouseLeave={() => clearTimeout(longPressTimeout.current)}
                                 onTouchStart={(e) => {
-                                  if (msg.optimistic) return;
+                                  if (msg.optimistic || msg.deleted) return;
                                   e.preventDefault();
+                                  setHoveredMsgId(msg.id);
                                   const x = e.touches[0].clientX; const y = e.touches[0].clientY;
                                   longPressTimeout.current = setTimeout(() => {
                                     setReactionPickerPos({ x, y });
                                     setReactionPickerMsgId(msg.id);
                                     setShowAllEmojis(false);
+                                    setHoveredMsgId(null);
                                   }, 500);
                                 }}
                                 onTouchEnd={() => clearTimeout(longPressTimeout.current)}
@@ -1396,8 +1464,22 @@ export default function ChatApp({ currentUser, onLogout }) {
                                     <div style={{ color: "rgba(255,255,255,0.4)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{msg.reply_to.text}</div>
                                   </div>
                                 )}
-                                {msg.text}
+                                {editingMsgId === msg.id ? (
+                                  <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                                    <input autoFocus value={editText} onChange={(e) => setEditText(e.target.value)}
+                                      onKeyDown={(e) => { if (e.key === "Enter") saveEdit(msg.id, false); if (e.key === "Escape") { setEditingMsgId(null); setEditText(""); } }}
+                                      style={{ flex: 1, background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", color: "#fff", padding: "4px 8px", fontSize: "14px", outline: "none" }}
+                                    />
+                                    <span onClick={() => saveEdit(msg.id, false)} style={{ cursor: "pointer", fontSize: "16px" }}>✓</span>
+                                    <span onClick={() => { setEditingMsgId(null); setEditText(""); }} style={{ cursor: "pointer", fontSize: "14px", opacity: 0.5 }}>✕</span>
+                                  </div>
+                                ) : msg.deleted ? (
+                                  <span style={{ color: "rgba(255,255,255,0.3)", fontSize: "13px", fontStyle: "italic" }}>🚫 This message was deleted</span>
+                                ) : msg.text}
                               </div>
+                              {msg.edited && !msg.deleted && (
+                                <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.25)", textAlign: isMe ? "right" : "left", paddingLeft: "4px" }}>edited</div>
+                              )}
                               {!msg.deleted && msg.reactions && Object.keys(msg.reactions).length > 0 && (
                                 <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", justifyContent: isMe ? "flex-end" : "flex-start", paddingLeft: "4px", paddingRight: "4px" }}>
                                   {Object.entries(msg.reactions).map(([emoji, users]) => (
