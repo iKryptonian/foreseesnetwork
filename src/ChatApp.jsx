@@ -489,9 +489,24 @@ export default function ChatApp({ currentUser, onLogout }) {
     setShowMembersPanel(false);
   };
 
+  const prevMsgCountRef = useRef(0);
+  const prevGroupMsgCountRef = useRef(0);
+
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, groupMessages]);
+    const currentCount = messages.length;
+    if (currentCount > prevMsgCountRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+    prevMsgCountRef.current = currentCount;
+  }, [messages]);
+
+  useEffect(() => {
+    const currentCount = groupMessages.length;
+    if (currentCount > prevGroupMsgCountRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+    prevGroupMsgCountRef.current = currentCount;
+  }, [groupMessages]);
 
   useEffect(() => {
     const handler = (e) => {
@@ -691,19 +706,27 @@ export default function ChatApp({ currentUser, onLogout }) {
     setTimeout(() => inputRef.current?.focus(), 100);
   };
 
+  const messagesContainerRef = useRef(null);
+
   const scrollToMessage = (msgId) => {
     if (!msgId) return;
-    // Try all possible id formats
     const id = String(msgId);
     let el = document.getElementById(`msg-${id}`);
     if (!el) el = document.getElementById(`msg-${parseInt(id)}`);
-    if (!el) {
-      // Search all message divs
-      const all = document.querySelectorAll('[id^="msg-"]');
-      el = Array.from(all).find(e => e.id === `msg-${id}` || e.id === `msg-${parseInt(id)}`);
-    }
     if (!el) return;
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
+
+    // Scroll the messages container
+    const container = messagesContainerRef.current;
+    if (container) {
+      const containerRect = container.getBoundingClientRect();
+      const elRect = el.getBoundingClientRect();
+      const offset = elRect.top - containerRect.top - (containerRect.height / 2) + (elRect.height / 2);
+      container.scrollBy({ top: offset, behavior: "smooth" });
+    } else {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+
+    // Flash highlight
     el.style.transition = "background 0.5s ease";
     el.style.background = "rgba(102,126,234,0.35)";
     setTimeout(() => { el.style.background = ""; }, 1800);
@@ -780,7 +803,7 @@ export default function ChatApp({ currentUser, onLogout }) {
             {(showAllEmojis
               ? [
                   // Smileys
-                  "🖕","😀","😃","😄","😁","😆","😅","🤣","😂","🙂","🙃","😉","😊","😇","🥰","😍","🤩","😘","😗","😚","😙",
+                  "😀","😃","😄","😁","😆","😅","🤣","😂","🙂","🙃","😉","😊","😇","🥰","😍","🤩","😘","😗","😚","😙",
                   "😋","😛","😜","🤪","😝","🤑","🤗","🤭","🤫","🤔","🤐","🤨","😐","😑","😶","😏","😒","🙄","😬","🤥",
                   "😌","😔","😪","🤤","😴","😷","🤒","🤕","🤢","🤮","🤧","🥵","🥶","🥴","😵","🤯","🤠","🥳","😎","🤓",
                   "🧐","😕","😟","🙁","☹️","😮","😯","😲","😳","🥺","😦","😧","😨","😰","😥","😢","😭","😱","😖","😣",
@@ -1195,7 +1218,7 @@ export default function ChatApp({ currentUser, onLogout }) {
             <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
               {/* ── MESSAGES ── */}
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                <div style={c.messages}>
+                <div ref={messagesContainerRef} style={c.messages}>
                   {/* 1-on-1 messages */}
                   {activeChatUser && (
                     <>
