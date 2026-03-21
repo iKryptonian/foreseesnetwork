@@ -75,12 +75,9 @@ export default function ChatApp({ currentUser, onLogout }) {
   const [showAllEmojis, setShowAllEmojis] = useState(false);
   const reactionHoverTimeout = useRef(null);
   const longPressTimeout = useRef(null);
-  const tapTimeout = useRef(null);
   const [reactionPickerPos, setReactionPickerPos] = useState({ x: 0, y: 0 });
-  const [replyTo, setReplyTo] = useState(null);
-  const [selectedMsg, setSelectedMsg] = useState(null); // { id, text, isGroup, isMe }
-  const [editingMsgId, setEditingMsgId] = useState(null);
-  const [editText, setEditText] = useState("");
+  const [msgActions, setMsgActions] = useState(null); // { id, text, isMe, isGroup }
+
 
   // ── Create group modal ──
   const [showCreateGroup, setShowCreateGroup] = useState(false);
@@ -278,21 +275,13 @@ export default function ChatApp({ currentUser, onLogout }) {
     });
 
     socket.on("message_edited", ({ messageId, newText, isGroup }) => {
-      if (isGroup) {
-        setGroupMessages((prev) => prev.map((m) => m.id === messageId ? { ...m, text: newText, edited: true } : m));
-      } else {
-        setMessages((prev) => prev.map((m) => m.id === messageId ? { ...m, text: newText, edited: true } : m));
-      }
+      if (isGroup) setGroupMessages((prev) => prev.map((m) => m.id === messageId ? { ...m, text: newText, edited: true } : m));
+      else setMessages((prev) => prev.map((m) => m.id === messageId ? { ...m, text: newText, edited: true } : m));
     });
-
     socket.on("message_deleted", ({ messageId, isGroup }) => {
-      if (isGroup) {
-        setGroupMessages((prev) => prev.map((m) => m.id === messageId ? { ...m, text: "This message was deleted", deleted: true, reactions: {} } : m));
-      } else {
-        setMessages((prev) => prev.map((m) => m.id === messageId ? { ...m, text: "This message was deleted", deleted: true, reactions: {} } : m));
-      }
+      if (isGroup) setGroupMessages((prev) => prev.map((m) => m.id === messageId ? { ...m, text: "This message was deleted", deleted: true, reactions: {} } : m));
+      else setMessages((prev) => prev.map((m) => m.id === messageId ? { ...m, text: "This message was deleted", deleted: true, reactions: {} } : m));
     });
-
     socket.on("reaction_updated", ({ messageId, reactions, isGroup }) => {
       if (isGroup) {
         setGroupMessages((prev) =>
@@ -511,24 +500,9 @@ export default function ChatApp({ currentUser, onLogout }) {
     setShowMembersPanel(false);
   };
 
-  const prevMsgCountRef = useRef(0);
-  const prevGroupMsgCountRef = useRef(0);
-
   useEffect(() => {
-    const currentCount = messages.length;
-    if (currentCount > prevMsgCountRef.current) {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
-    prevMsgCountRef.current = currentCount;
-  }, [messages]);
-
-  useEffect(() => {
-    const currentCount = groupMessages.length;
-    if (currentCount > prevGroupMsgCountRef.current) {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
-    prevGroupMsgCountRef.current = currentCount;
-  }, [groupMessages]);
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, groupMessages]);
 
   useEffect(() => {
     const handler = (e) => {
@@ -590,7 +564,6 @@ export default function ChatApp({ currentUser, onLogout }) {
         (response) => {
           if (response?.status === "saved" && response.msg) {
             setGroupMessages((prev) => prev.map((m) => m.id === optimisticMsg.id ? response.msg : m));
-            setReplyTo(null);
             setMyGroups((prev) =>
               prev.map((g) =>
                 g.id === activeGroup.id
@@ -719,62 +692,37 @@ export default function ChatApp({ currentUser, onLogout }) {
     // Keep picker open so user can add multiple reactions
   };
 
+
+
+  const [replyTo, setReplyTo] = useState(null);
+  const [editingMsgId, setEditingMsgId] = useState(null);
+  const [editText, setEditText] = useState("");
+
+  const handleReply = (msg) => {
+    setReplyTo({ id: msg.id, text: msg.text, from_user: msg.from_user || msg.from });
+    setMsgActions(null);
+    setReactionPickerMsgId(null);
+    setTimeout(() => inputRef.current?.focus(), 100);
+  };
+
   const editMessage = (msgId, currentText, isGroup) => {
     setEditingMsgId(msgId);
     setEditText(currentText);
-    setMsgMenu(null);
+    setMsgActions(null);
+    setReactionPickerMsgId(null);
   };
 
   const saveEdit = (msgId, isGroup) => {
     if (!editText.trim()) return;
-    socket.emit("edit_message", {
-      messageId: msgId,
-      newText: editText.trim(),
-      username: currentUser.username,
-      isGroup: !!isGroup,
-      groupId: activeGroup?.id,
-    });
+    socket.emit("edit_message", { messageId: msgId, newText: editText.trim(), username: currentUser.username, isGroup: !!isGroup, groupId: activeGroup?.id });
     setEditingMsgId(null);
     setEditText("");
   };
 
   const deleteMessage = (msgId, isGroup) => {
-    socket.emit("delete_message", {
-      messageId: msgId,
-      username: currentUser.username,
-      isGroup: !!isGroup,
-      groupId: activeGroup?.id,
-    });
-    setMsgMenu(null);
-  };
-
-  const handleReply = (msg) => {
-    setReplyTo({
-      id: msg.id,
-      text: msg.text,
-      from_user: msg.from_user || msg.from,
-    });
-    setTimeout(() => inputRef.current?.focus(), 100);
-  };
-
-  const messagesContainerRef = useRef(null);
-
-  const scrollToMessage = (msgId) => {
-    if (!msgId) return;
-    const id = String(msgId);
-    let el = document.getElementById(`msg-${id}`);
-    if (!el) el = document.getElementById(`msg-${parseInt(id)}`);
-    if (!el) return;
-    const container = messagesContainerRef.current;
-    if (container) {
-      const containerRect = container.getBoundingClientRect();
-      const elRect = el.getBoundingClientRect();
-      const offset = elRect.top - containerRect.top - (containerRect.height / 2) + (elRect.height / 2);
-      container.scrollBy({ top: offset, behavior: "smooth" });
-    }
-    el.style.transition = "background 0.5s ease";
-    el.style.background = "rgba(102,126,234,0.35)";
-    setTimeout(() => { el.style.background = ""; }, 1800);
+    socket.emit("delete_message", { messageId: msgId, username: currentUser.username, isGroup: !!isGroup, groupId: activeGroup?.id });
+    setMsgActions(null);
+    setReactionPickerMsgId(null);
   };
 
   const myRoleInGroup = groupMembers.find((m) => m.username === currentUser.username)?.role;
@@ -804,10 +752,55 @@ export default function ChatApp({ currentUser, onLogout }) {
         <>
           {/* Backdrop */}
           <div
-            onMouseDown={() => { setReactionPickerMsgId(null); setShowAllEmojis(false); }}
-            onTouchStart={() => { setReactionPickerMsgId(null); setShowAllEmojis(false); }}
+            onMouseDown={() => { setReactionPickerMsgId(null); setShowAllEmojis(false); setMsgActions(null); }}
+            onTouchStart={() => { setReactionPickerMsgId(null); setShowAllEmojis(false); setMsgActions(null); }}
             style={{ position: "fixed", inset: 0, zIndex: 1999 }}
           />
+          {/* Action bar — reply, edit, delete */}
+          {msgActions && (
+            <div
+              onMouseDown={(e) => e.stopPropagation()}
+              onTouchStart={(e) => e.stopPropagation()}
+              style={{
+                position: "fixed",
+                bottom: (() => {
+                  const pickerH = showAllEmojis ? 220 : 56;
+                  return reactionPickerPos.y > window.innerHeight / 2
+                    ? window.innerHeight - reactionPickerPos.y + pickerH + 10
+                    : window.innerHeight - reactionPickerPos.y - 10;
+                })(),
+                left: Math.min(Math.max(10, reactionPickerPos.x - 110), window.innerWidth - 230),
+                background: "#1a1a35",
+                border: "1px solid rgba(255,255,255,0.12)",
+                borderRadius: "14px",
+                padding: "6px 8px",
+                zIndex: 2001,
+                display: "flex",
+                gap: "4px",
+                boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+              }}
+            >
+              <button onClick={() => handleReply(msgActions)}
+                style={{ background: "none", border: "none", color: "#fff", padding: "8px 12px", cursor: "pointer", fontSize: "13px", borderRadius: "8px", display: "flex", alignItems: "center", gap: "5px" }}
+                onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.08)"}
+                onMouseLeave={(e) => e.currentTarget.style.background = "none"}
+              >↩ Reply</button>
+              {msgActions.isMe && (
+                <button onClick={() => editMessage(msgActions.id, msgActions.text, msgActions.isGroup)}
+                  style={{ background: "none", border: "none", color: "#667eea", padding: "8px 12px", cursor: "pointer", fontSize: "13px", borderRadius: "8px", display: "flex", alignItems: "center", gap: "5px" }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = "rgba(102,126,234,0.1)"}
+                  onMouseLeave={(e) => e.currentTarget.style.background = "none"}
+                >✏️ Edit</button>
+              )}
+              {msgActions.isMe && (
+                <button onClick={() => deleteMessage(msgActions.id, msgActions.isGroup)}
+                  style={{ background: "none", border: "none", color: "#f5576c", padding: "8px 12px", cursor: "pointer", fontSize: "13px", borderRadius: "8px", display: "flex", alignItems: "center", gap: "5px" }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = "rgba(245,87,108,0.1)"}
+                  onMouseLeave={(e) => e.currentTarget.style.background = "none"}
+                >🗑️ Delete</button>
+              )}
+            </div>
+          )}
           {/* Unified Picker */}
           <div
             onMouseDown={(e) => e.stopPropagation()}
@@ -1210,22 +1203,7 @@ export default function ChatApp({ currentUser, onLogout }) {
                       )}
                     </div>
                   </div>
-                  {selectedMsg && (
-                    <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-                      <button onClick={() => { handleReply({ id: selectedMsg.id, text: selectedMsg.text, from_user: selectedMsg.from_user }); setSelectedMsg(null); }}
-                        title="Reply" style={c.headerActionBtn}>↩</button>
-                      {selectedMsg.isMe && (
-                        <button onClick={() => { editMessage(selectedMsg.id, selectedMsg.text, false); setSelectedMsg(null); }}
-                          title="Edit" style={{ ...c.headerActionBtn, color: "#667eea" }}>✏️</button>
-                      )}
-                      {selectedMsg.isMe && (
-                        <button onClick={() => { deleteMessage(selectedMsg.id, false); setSelectedMsg(null); }}
-                          title="Delete" style={{ ...c.headerActionBtn, color: "#f5576c" }}>🗑️</button>
-                      )}
-                      <button onClick={() => setSelectedMsg(null)}
-                        style={{ ...c.headerActionBtn, fontSize: "11px", opacity: 0.4 }}>✕</button>
-                    </div>
-                  )}
+
                 </>
               )}
 
@@ -1248,22 +1226,7 @@ export default function ChatApp({ currentUser, onLogout }) {
                       )}
                     </div>
                   </div>
-                  {selectedMsg && (
-                    <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-                      <button onClick={() => { handleReply({ id: selectedMsg.id, text: selectedMsg.text, from_user: selectedMsg.from_user }); setSelectedMsg(null); }}
-                        title="Reply" style={c.headerActionBtn}>↩</button>
-                      {selectedMsg.isMe && (
-                        <button onClick={() => { editMessage(selectedMsg.id, selectedMsg.text, true); setSelectedMsg(null); }}
-                          title="Edit" style={{ ...c.headerActionBtn, color: "#667eea" }}>✏️</button>
-                      )}
-                      {selectedMsg.isMe && (
-                        <button onClick={() => { deleteMessage(selectedMsg.id, true); setSelectedMsg(null); }}
-                          title="Delete" style={{ ...c.headerActionBtn, color: "#f5576c" }}>🗑️</button>
-                      )}
-                      <button onClick={() => setSelectedMsg(null)}
-                        style={{ ...c.headerActionBtn, fontSize: "11px", opacity: 0.4 }}>✕</button>
-                    </div>
-                  )}
+
                   <div style={{ display: "flex", gap: "6px" }}>
                     <button
                       className="members-btn"
@@ -1295,7 +1258,7 @@ export default function ChatApp({ currentUser, onLogout }) {
             <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
               {/* ── MESSAGES ── */}
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                <div ref={messagesContainerRef} onClick={(e) => { if (e.target === messagesContainerRef.current) setSelectedMsg(null); }} style={c.messages}>
+                <div style={c.messages}>
                   {/* 1-on-1 messages */}
                   {activeChatUser && (
                     <>
@@ -1323,7 +1286,7 @@ export default function ChatApp({ currentUser, onLogout }) {
                             )}
                             <div style={{ maxWidth: "70%", display: "flex", flexDirection: "column", gap: "2px", }}>
                               <div
-                                onMouseLeave={() => { setSelectedMsg(null); clearTimeout(longPressTimeout.current); }}
+                                onMouseLeave={() => clearTimeout(longPressTimeout.current)}
                                 onMouseDown={(e) => {
                                   if (msg.optimistic || msg.deleted) return;
                                   const x = e.clientX; const y = e.clientY;
@@ -1342,69 +1305,22 @@ export default function ChatApp({ currentUser, onLogout }) {
                                     setReactionPickerPos({ x, y });
                                     setReactionPickerMsgId(msg.id);
                                     setShowAllEmojis(false);
-                                    setSelectedMsg({ id: msg.id, text: msg.text, from_user: msg.from_user || msg.from, isGroup: false, isMe });
                                   }, 500);
                                 }}
                                 onTouchEnd={() => clearTimeout(longPressTimeout.current)}
                                 onContextMenu={(e) => e.preventDefault()}
                                 style={{
                                   ...c.bubble,
-                                  background: msg.deleted ? "rgba(255,255,255,0.04)" : isMe ? (msg.status === "failed" ? "rgba(245,87,108,0.3)" : "linear-gradient(135deg, #667eea, #764ba2)") : "rgba(255,255,255,0.08)",
+                                  background: isMe ? (msg.status === "failed" ? "rgba(245,87,108,0.3)" : "linear-gradient(135deg, #667eea, #764ba2)") : "rgba(255,255,255,0.08)",
                                   borderRadius: isMe ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
                                   opacity: msg.optimistic ? 0.7 : 1,
                                   cursor: "pointer",
                                   userSelect: "none",
                                   WebkitUserSelect: "none",
-                                  fontStyle: msg.deleted ? "italic" : "normal",
-                                }}
+                                                                  }}
                                 className="msg-bubble"
-                              >
-                                {msg.reply_to && (
-                                  <div
-                                    onMouseDown={(e) => { e.stopPropagation(); clearTimeout(longPressTimeout.current); }}
-                                    onMouseUp={(e) => { e.stopPropagation(); scrollToMessage(msg.reply_to?.id); }}
-                                    onDoubleClick={(e) => e.stopPropagation()}
-                                    onTouchStart={(e) => { e.stopPropagation(); clearTimeout(longPressTimeout.current); }}
-                                    onTouchEnd={(e) => { e.stopPropagation(); scrollToMessage(msg.reply_to?.id); }}
-                                    style={{ background: "rgba(0,0,0,0.2)", borderLeft: "3px solid rgba(255,255,255,0.4)", borderRadius: "6px", padding: "5px 8px", marginBottom: "6px", fontSize: "12px", cursor: "pointer" }}
-                                  >
-                                    <div style={{ color: "rgba(255,255,255,0.6)", fontWeight: 700, marginBottom: "2px" }}>↩ @{msg.reply_to.from_user}</div>
-                                    <div style={{ color: "rgba(255,255,255,0.4)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{msg.reply_to.text}</div>
-                                  </div>
-                                )}
-                                {editingMsgId === msg.id ? (
-                                  <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-                                    <input autoFocus value={editText} onChange={(e) => setEditText(e.target.value)}
-                                      onKeyDown={(e) => { if (e.key === "Enter") saveEdit(msg.id, false); if (e.key === "Escape") { setEditingMsgId(null); setEditText(""); } }}
-                                      style={{ flex: 1, background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", color: "#fff", padding: "4px 8px", fontSize: "14px", outline: "none" }}
-                                    />
-                                    <span onClick={() => saveEdit(msg.id, false)} style={{ cursor: "pointer", fontSize: "16px" }}>✓</span>
-                                    <span onClick={() => { setEditingMsgId(null); setEditText(""); }} style={{ cursor: "pointer", fontSize: "14px", opacity: 0.5 }}>✕</span>
-                                  </div>
-                                ) : msg.deleted ? (
-                                  <span style={{ color: "rgba(255,255,255,0.3)", fontSize: "13px", fontStyle: "italic" }}>🚫 This message was deleted</span>
-                                ) : msg.text}
+                              >{msg.text}
                               </div>
-                              {msg.edited && !msg.deleted && (
-                                <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.25)", textAlign: isMe ? "right" : "left", paddingLeft: "4px" }}>edited</div>
-                              )}
-                              {!msg.deleted && msg.reactions && Object.keys(msg.reactions).length > 0 && (
-                                <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", justifyContent: isMe ? "flex-end" : "flex-start", paddingLeft: "4px", paddingRight: "4px" }}>
-                                  {Object.entries(msg.reactions).map(([emoji, users]) => (
-                                    <span key={emoji} onClick={() => toggleReaction(msg.id, emoji, false)} style={{ background: users.includes(currentUser.username) ? "rgba(102,126,234,0.3)" : "rgba(255,255,255,0.08)", border: `1px solid ${users.includes(currentUser.username) ? "rgba(102,126,234,0.5)" : "rgba(255,255,255,0.1)"}`, borderRadius: "12px", padding: "2px 6px", fontSize: "12px", cursor: "pointer" }}>
-                                      {emoji} {users.length}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                              <div style={{ display: "flex", alignItems: "center", justifyContent: isMe ? "flex-end" : "flex-start", gap: "3px", paddingLeft: "4px", paddingRight: "4px" }}>
-                                <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.2)" }}>{formatTime(msg)}</span>
-                                {isMe && !msg.deleted && statusTick(msg.status)}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
                     </>
                   )}
 
@@ -1427,7 +1343,7 @@ export default function ChatApp({ currentUser, onLogout }) {
                       {groupMessages.map((msg, i) => {
                         const isMe = msg.from_user === currentUser.username;
                         return (
-                          <div key={msg.id || i} id={`msg-${msg.id}`} style={{ ...c.msgRow, justifyContent: isMe ? "flex-end" : "flex-start", borderRadius: "8px", transition: "background 0.3s" }}>
+                          <div key={msg.id || i} style={{ ...c.msgRow, justifyContent: isMe ? "flex-end" : "flex-start", borderRadius: "8px", transition: "background 0.3s" }}>
                             {!isMe && (
                               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
                                 <div style={{ ...c.msgAvatar, background: avatarColor(msg.from_user) }}>
@@ -1455,7 +1371,7 @@ export default function ChatApp({ currentUser, onLogout }) {
                                   userSelect: "none",
                                   WebkitUserSelect: "none",
                                 }}
-                                onMouseLeave={() => { setSelectedMsg(null); clearTimeout(longPressTimeout.current); }}
+                                onMouseLeave={() => clearTimeout(longPressTimeout.current)}
                                 onMouseDown={(e) => {
                                   if (msg.optimistic || msg.deleted) return;
                                   const x = e.clientX; const y = e.clientY;
@@ -1469,80 +1385,32 @@ export default function ChatApp({ currentUser, onLogout }) {
                                 onTouchStart={(e) => {
                                   if (msg.optimistic || msg.deleted) return;
                                   e.preventDefault();
-                                  setSelectedMsg({ id: msg.id, text: msg.text, from_user: msg.from_user || msg.from, isGroup: !!activeGroup, isMe });
                                   const x = e.touches[0].clientX; const y = e.touches[0].clientY;
                                   longPressTimeout.current = setTimeout(() => {
                                     setReactionPickerPos({ x, y });
                                     setReactionPickerMsgId(msg.id);
                                     setShowAllEmojis(false);
-                                    setSelectedMsg(null);
                                   }, 500);
                                 }}
                                 onTouchEnd={() => clearTimeout(longPressTimeout.current)}
                                 onContextMenu={(e) => e.preventDefault()}
-                              >
-                                {msg.reply_to && (
-                                  <div
-                                    onMouseDown={(e) => { e.stopPropagation(); clearTimeout(longPressTimeout.current); }}
-                                    onMouseUp={(e) => { e.stopPropagation(); scrollToMessage(msg.reply_to?.id); }}
-                                    onDoubleClick={(e) => e.stopPropagation()}
-                                    onTouchStart={(e) => { e.stopPropagation(); clearTimeout(longPressTimeout.current); }}
-                                    onTouchEnd={(e) => { e.stopPropagation(); scrollToMessage(msg.reply_to?.id); }}
-                                    style={{ background: "rgba(0,0,0,0.2)", borderLeft: "3px solid rgba(255,255,255,0.4)", borderRadius: "6px", padding: "5px 8px", marginBottom: "6px", fontSize: "12px", cursor: "pointer" }}
-                                  >
-                                    <div style={{ color: "rgba(255,255,255,0.6)", fontWeight: 700, marginBottom: "2px" }}>↩ @{msg.reply_to.from_user}</div>
-                                    <div style={{ color: "rgba(255,255,255,0.4)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{msg.reply_to.text}</div>
-                                  </div>
-                                )}
-                                {editingMsgId === msg.id ? (
-                                  <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-                                    <input autoFocus value={editText} onChange={(e) => setEditText(e.target.value)}
-                                      onKeyDown={(e) => { if (e.key === "Enter") saveEdit(msg.id, false); if (e.key === "Escape") { setEditingMsgId(null); setEditText(""); } }}
-                                      style={{ flex: 1, background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", color: "#fff", padding: "4px 8px", fontSize: "14px", outline: "none" }}
-                                    />
-                                    <span onClick={() => saveEdit(msg.id, false)} style={{ cursor: "pointer", fontSize: "16px" }}>✓</span>
-                                    <span onClick={() => { setEditingMsgId(null); setEditText(""); }} style={{ cursor: "pointer", fontSize: "14px", opacity: 0.5 }}>✕</span>
-                                  </div>
-                                ) : msg.deleted ? (
-                                  <span style={{ color: "rgba(255,255,255,0.3)", fontSize: "13px", fontStyle: "italic" }}>🚫 This message was deleted</span>
-                                ) : msg.text}
+                              >{msg.text}
                               </div>
-                              {msg.edited && !msg.deleted && (
-                                <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.25)", textAlign: isMe ? "right" : "left", paddingLeft: "4px" }}>edited</div>
-                              )}
-                              {!msg.deleted && msg.reactions && Object.keys(msg.reactions).length > 0 && (
-                                <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", justifyContent: isMe ? "flex-end" : "flex-start", paddingLeft: "4px", paddingRight: "4px" }}>
-                                  {Object.entries(msg.reactions).map(([emoji, users]) => (
-                                    <span key={emoji} onClick={() => toggleReaction(msg.id, emoji, true)} style={{ background: users.includes(currentUser.username) ? "rgba(102,126,234,0.3)" : "rgba(255,255,255,0.08)", border: `1px solid ${users.includes(currentUser.username) ? "rgba(102,126,234,0.5)" : "rgba(255,255,255,0.1)"}`, borderRadius: "12px", padding: "2px 6px", fontSize: "12px", cursor: "pointer" }}>
-                                      {emoji} {users.length}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                              <div style={{ display: "flex", alignItems: "center", justifyContent: isMe ? "flex-end" : "flex-start", gap: "3px", paddingLeft: "4px" }}>
-                                <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.2)" }}>{formatTime(msg)}</span>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
                     </>
                   )}
 
                   <div ref={bottomRef} />
                 </div>
-
                 {/* ── REPLY PREVIEW ── */}
                 {replyTo && (
-                  <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 16px 0", background: "rgba(19,19,42,0.98)", borderTop: "1px solid rgba(255,255,255,0.07)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 16px 0", borderTop: "1px solid rgba(255,255,255,0.07)" }}>
                     <div style={{ flex: 1, background: "rgba(102,126,234,0.1)", borderLeft: "3px solid #667eea", borderRadius: "8px", padding: "6px 10px" }}>
-                      <div style={{ fontSize: "11px", color: "#667eea", fontWeight: 700, marginBottom: "2px" }}>↩ Replying to @{replyTo.from_user}</div>
-                      <div style={{ fontSize: "12px", color: "rgba(255,255,255,0.5)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{replyTo.text}</div>
+                      <div style={{ fontSize: "11px", color: "#667eea", fontWeight: 700, marginBottom: "2px" }}>↩ @{replyTo.from_user}</div>
+                      <div style={{ fontSize: "12px", color: "rgba(255,255,255,0.4)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{replyTo.text}</div>
                     </div>
-                    <button onClick={() => setReplyTo(null)} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.4)", cursor: "pointer", fontSize: "16px", padding: "4px" }}>✕</button>
+                    <button onClick={() => setReplyTo(null)} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.4)", cursor: "pointer", fontSize: "18px" }}>✕</button>
                   </div>
                 )}
-
                 {/* ── INPUT ── */}
                 <div style={c.inputBar}>
                   <input
@@ -1704,5 +1572,4 @@ const c = {
   inputBar: { display: "flex", gap: "10px", padding: "12px 16px", background: "rgba(19,19,42,0.98)", borderTop: "1px solid rgba(255,255,255,0.07)", flexShrink: 0 },
   input: { flex: 1, background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px", color: "#fff", fontSize: "14px", padding: "12px 16px", outline: "none" },
   sendBtn: { width: "46px", height: "46px", borderRadius: "12px", background: "linear-gradient(135deg, #667eea, #764ba2)", border: "none", color: "#fff", fontSize: "18px", cursor: "pointer", flexShrink: 0, transition: "opacity 0.2s" },
-  headerActionBtn: { background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: "8px", color: "#fff", padding: "6px 10px", cursor: "pointer", fontSize: "16px", display: "flex", alignItems: "center", justifyContent: "center" },
 };
