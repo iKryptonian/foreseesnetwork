@@ -714,19 +714,13 @@ export default function ChatApp({ currentUser, onLogout }) {
     let el = document.getElementById(`msg-${id}`);
     if (!el) el = document.getElementById(`msg-${parseInt(id)}`);
     if (!el) return;
-
-    // Scroll the messages container
     const container = messagesContainerRef.current;
     if (container) {
       const containerRect = container.getBoundingClientRect();
       const elRect = el.getBoundingClientRect();
       const offset = elRect.top - containerRect.top - (containerRect.height / 2) + (elRect.height / 2);
       container.scrollBy({ top: offset, behavior: "smooth" });
-    } else {
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
     }
-
-    // Flash highlight
     el.style.transition = "background 0.5s ease";
     el.style.background = "rgba(102,126,234,0.35)";
     setTimeout(() => { el.style.background = ""; }, 1800);
@@ -1286,6 +1280,7 @@ export default function ChatApp({ currentUser, onLogout }) {
                                   <div
                                     onMouseDown={(e) => { e.stopPropagation(); clearTimeout(longPressTimeout.current); }}
                                     onMouseUp={(e) => { e.stopPropagation(); scrollToMessage(msg.reply_to?.id); }}
+                                    onDoubleClick={(e) => e.stopPropagation()}
                                     onTouchStart={(e) => { e.stopPropagation(); clearTimeout(longPressTimeout.current); }}
                                     onTouchEnd={(e) => { e.stopPropagation(); scrollToMessage(msg.reply_to?.id); }}
                                     style={{ background: "rgba(0,0,0,0.2)", borderLeft: "3px solid rgba(255,255,255,0.4)", borderRadius: "6px", padding: "5px 8px", marginBottom: "6px", fontSize: "12px", cursor: "pointer" }}
@@ -1392,6 +1387,7 @@ export default function ChatApp({ currentUser, onLogout }) {
                                   <div
                                     onMouseDown={(e) => { e.stopPropagation(); clearTimeout(longPressTimeout.current); }}
                                     onMouseUp={(e) => { e.stopPropagation(); scrollToMessage(msg.reply_to?.id); }}
+                                    onDoubleClick={(e) => e.stopPropagation()}
                                     onTouchStart={(e) => { e.stopPropagation(); clearTimeout(longPressTimeout.current); }}
                                     onTouchEnd={(e) => { e.stopPropagation(); scrollToMessage(msg.reply_to?.id); }}
                                     style={{ background: "rgba(0,0,0,0.2)", borderLeft: "3px solid rgba(255,255,255,0.4)", borderRadius: "6px", padding: "5px 8px", marginBottom: "6px", fontSize: "12px", cursor: "pointer" }}
