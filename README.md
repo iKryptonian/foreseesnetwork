@@ -41,6 +41,46 @@ A production-grade real-time chat application built with a complete DevOps pipel
 
 ---
 
+## 📋 Full Workflow — Step by Step
+
+### Start Everything
+```bash
+# Step 1 — Start Minikube cluster
+minikube start
+
+# Step 2 — Port forward chat app (keep open)
+kubectl port-forward svc/client-service 5173:80 -n foreseesnetwork &
+
+# Step 3 — Port forward Grafana (optional, keep open)
+kubectl port-forward svc/monitoring-grafana 3000:80 -n monitoring &
+
+# Step 4 — Start CI/CD runner (only needed when pushing code)
+cd ~/actions-runner && ./run.sh
+```
+
+### Open in Browser
+```
+http://localhost:5173  → Chat app
+http://localhost:3000  → Grafana monitoring
+```
+
+### Push Code (auto deploys)
+```bash
+cd ~/livechat
+git add .
+git commit -m "your message"
+git push
+# Actions runner picks it up → builds images → deploys to K8s automatically
+```
+
+### Stop Everything
+```bash
+pkill -f "kubectl port-forward"   # kill all port-forwards
+minikube stop                      # stop cluster
+```
+
+---
+
 ## 🚀 Quickstart
 
 ### Option 1 — Docker Compose (local dev)
@@ -50,26 +90,21 @@ docker-compose up          # foreground
 docker-compose up -d       # background
 docker-compose down        # stop
 docker-compose up --build  # rebuild images
+docker-compose logs -f fn_server  # view server logs
 ```
 Open: **http://localhost**
 
 ### Option 2 — Kubernetes (full stack)
-
-**Terminal 1 — Start Minikube:**
 ```bash
+# Terminal 1
 minikube start
-```
 
-**Terminal 2 — Port forward app:**
-```bash
+# Terminal 2 — Chat app
 kubectl port-forward svc/client-service 5173:80 -n foreseesnetwork
-```
 
-**Terminal 3 — CI/CD runner (only when pushing code):**
-```bash
+# Terminal 3 — CI/CD runner (only when pushing code)
 cd ~/actions-runner && ./run.sh
 ```
-
 Open: **http://localhost:5173**
 
 ---
@@ -88,7 +123,7 @@ Browser → Nginx (port 80 or 5173)
                             :5432         :6379
 ```
 
-> Port 4000 is **internal only** — nginx proxies to it. The browser never talks to port 4000 directly. All frontend API calls use relative URLs (/api/...) so the app works on any domain — localhost, ngrok, Railway, AWS.
+> Port 4000 is **internal only** — nginx proxies to it. All frontend API calls use relative URLs (/api/...) — works on any domain: localhost, ngrok, Railway, AWS.
 
 ### Port Reference
 
@@ -144,7 +179,7 @@ foreseesnetwork/
 │   ├── configmap.yml               # Non-secret env variables
 │   ├── secrets.yml                 # DB password, email credentials
 │   ├── postgres.yml                # PostgreSQL deployment + PVC + service
-│   ├── postgres-init-configmap.yml # DB schema (all 6 tables auto-created)
+│   ├── postgres-init-configmap.yml # DB schema (all tables auto-created)
 │   ├── redis.yml                   # Redis deployment + service
 │   ├── server.yml                  # Node.js deployment + service
 │   ├── client.yml                  # React/Nginx deployment + service
@@ -160,7 +195,7 @@ foreseesnetwork/
 │   └── package.json                # Backend dependencies
 ├── src/                            # React frontend
 │   ├── App.jsx                     # Router + app entry
-│   ├── ChatApp.jsx                 # Main chat interface (1-on-1 + groups)
+│   ├── ChatApp.jsx                 # Main chat (1-on-1 + groups + reactions)
 │   ├── Login.jsx                   # Login page
 │   ├── Register.jsx                # Registration + OTP verification
 │   ├── ForgotPassword.jsx          # Forgot password page
@@ -168,9 +203,11 @@ foreseesnetwork/
 │   ├── Welcome.jsx                 # Landing/welcome page
 │   └── socket.js                   # Socket.io client (connects via nginx "/")
 ├── nginx.conf                      # Nginx reverse proxy config
-├── docker-compose.yml              # Local development (server-service name)
+├── docker-compose.yml              # Local development setup
 ├── Dockerfile                      # Client container image
 ├── grafana-values.yml              # Grafana Helm SMTP config
+├── start.sh                        # Start everything (minikube + port-forwards)
+├── stop.sh                         # Stop everything
 └── vite.config.js                  # Vite build config
 ```
 
@@ -186,9 +223,12 @@ foreseesnetwork/
 - ✅ Online/offline user status
 - ✅ Recent chats list
 - ✅ Chat history with pagination (50 per page)
-- ✅ Message reactions (long press → emoji picker → one reaction per person)
-- ✅ Edit message (long press own message → Edit → inline edit → Enter)
-- ✅ Delete message (long press own message → Delete → shows "This message was deleted")
+- ✅ Message reactions (long press → emoji picker, one reaction per person)
+- ✅ Reply to message (↩ in action menu → quoted preview in bubble)
+- ✅ Click reply preview → scrolls to original message with flash highlight
+- ✅ Edit message (✏️ in action menu → inline edit → Enter to save)
+- ✅ Delete message (🗑️ in action menu → "This message was deleted")
+- ✅ Copy blocked (cannot copy chat content)
 
 ### Group Chat
 - ✅ Create groups with multiple members
@@ -201,9 +241,7 @@ foreseesnetwork/
 - ✅ Real-time group messaging
 - ✅ Group typing indicators
 - ✅ Members panel with roles (👑 Admin / Member)
-- ✅ Message reactions (long press → emoji picker)
-- ✅ Edit message (long press own message → Edit)
-- ✅ Delete message (long press own message → Delete)
+- ✅ Message reactions, reply, edit, delete (same as 1-on-1)
 
 ### Auth
 - ✅ Registration with OTP email verification
@@ -252,6 +290,7 @@ foreseesnetwork/
 | reactions | JSONB | e.g. { "❤️": ["user1"] } |
 | edited | BOOLEAN | Whether message was edited |
 | deleted | BOOLEAN | Whether message was deleted |
+| reply_to | JSONB | { id, text, from_user } of quoted message |
 
 ### message_sequences
 | Column | Type | Description |
@@ -289,6 +328,7 @@ foreseesnetwork/
 | reactions | JSONB | e.g. { "😂": ["user1"] } |
 | edited | BOOLEAN | Whether message was edited |
 | deleted | BOOLEAN | Whether message was deleted |
+| reply_to | JSONB | { id, text, from_user } of quoted message |
 
 ### Indexes
 ```sql
@@ -339,11 +379,11 @@ idx_group_members_user    ON group_members (username)
 | `join` | `username` | Come online, join group rooms |
 | `logout` | `username` | Go offline immediately |
 | `heartbeat` | — | Keep-alive every 5s |
-| `send_message` | `{ from, to, text, time }` | 1-on-1 message with ACK |
+| `send_message` | `{ from, to, text, time, replyTo }` | 1-on-1 message with ACK |
 | `mark_read` | `{ from, to }` | Mark messages as read |
 | `typing` | `{ from, to }` | Started typing |
 | `stop_typing` | `{ from, to }` | Stopped typing |
-| `send_group_message` | `{ groupId, from, text, time }` | Group message |
+| `send_group_message` | `{ groupId, from, text, time, replyTo }` | Group message |
 | `make_admin` | `{ groupId, targetUser, requestedBy }` | Promote to admin |
 | `demote_admin` | `{ groupId, targetUser, requestedBy }` | Demote to member |
 | `remove_member` | `{ groupId, targetUser, requestedBy }` | Remove from group |
@@ -392,31 +432,25 @@ idx_group_members_user    ON group_members (username)
 | `REDIS_HOST` | configmap | redis-service |
 | `REDIS_PORT` | configmap | 6379 |
 | `EMAIL_USER` | secret | Gmail address |
-| `EMAIL_PASS` | secret | Gmail app password |
+| `EMAIL_PASS` | secret | Gmail app password (16-char) |
 | `TZ` | configmap | Asia/Kolkata |
 
 ---
 
 ## 🐳 Docker
 
-### Run with Docker Compose
 ```bash
 cd ~/livechat
-docker-compose up          # foreground
+docker-compose up          # start
 docker-compose up -d       # background
 docker-compose down        # stop
-docker-compose up --build  # rebuild images
-docker-compose logs -f fn_server  # view server logs
-```
+docker-compose up --build  # rebuild
 
-### Build images manually
-```bash
+# Build manually
 docker build -t livechat-server:latest ./server
 docker build -t livechat-client:latest .
-```
 
-### Load into Minikube manually
-```bash
+# Load into Minikube manually
 minikube ssh "docker rmi livechat-server:latest -f" || true
 minikube ssh "docker rmi livechat-client:latest -f" || true
 minikube image load livechat-server:latest
@@ -465,14 +499,13 @@ git push ───────────────────────�
 
 ### GitHub Secrets Required
 
-No GitHub secrets are needed for Minikube certificate authentication.
-Certs are embedded automatically via `minikube update-context` in the deploy script.
+No GitHub secrets needed for Minikube certificate authentication. Certs are embedded automatically via `minikube update-context` in the deploy script.
 
 The only credentials needed are in `k8s/secrets.yml`:
 ```yaml
 DB_PASSWORD: "postgres"
 EMAIL_USER:  "your@gmail.com"
-EMAIL_PASS:  "your-app-password"
+EMAIL_PASS:  "your-16-char-app-password"
 ```
 
 ### Pipeline Steps
@@ -495,7 +528,6 @@ JOB 2 — Deploy to Kubernetes (~2 min)
 
       ↓
 JOB 3 — Notify on Failure
-└── Echo failure details
 ```
 
 ### Useful CI/CD Commands
@@ -514,7 +546,7 @@ cd ~/actions-runner && ./run.sh
 
 ## 📊 Monitoring — Prometheus + Grafana
 
-### First Time Setup (after fresh Minikube)
+### First Time Setup (after fresh Minikube or minikube delete)
 
 **Step 1 — Add Helm repo:**
 ```bash
@@ -533,6 +565,7 @@ kubectl create secret generic grafana-smtp-secret \
   --from-literal=smtp-password=YOUR_GMAIL_APP_PASSWORD \
   -n monitoring
 ```
+> Your Gmail app password is in `k8s/secrets.yml` as `EMAIL_PASS`
 
 **Step 4 — Install full monitoring stack:**
 ```bash
@@ -556,13 +589,10 @@ monitoring-prometheus-node-exporter-xxx                  1/1 Running
 prometheus-monitoring-kube-prometheus-prometheus-0       2/2 Running
 ```
 
-### Access Grafana
-
-**Port forward:**
+**Step 6 — Access Grafana:**
 ```bash
 kubectl port-forward svc/monitoring-grafana 3000:80 -n monitoring
 ```
-
 Open: **http://localhost:3000**
 
 **Get admin password:**
@@ -570,10 +600,74 @@ Open: **http://localhost:3000**
 kubectl get secret monitoring-grafana -n monitoring \
   -o jsonpath='{.data.admin-password}' | base64 -d
 ```
+Login: username `admin`, password from above command.
 
-**Login:**
-- Username: `admin`
-- Password: output from above command
+---
+
+### Setting Up Email Alerts in Grafana
+
+After logging into Grafana at http://localhost:3000:
+
+#### Step 1 — Create a Contact Point (where alerts get sent)
+1. Go to **Alerting → Contact points**
+2. Click **+ Add contact point**
+3. Fill in:
+   - **Name:** `email-alerts`
+   - **Integration:** Email
+   - **Addresses:** your email address
+4. Click **Test** to verify email arrives
+5. Click **Save contact point**
+
+#### Step 2 — Set Default Contact Point
+1. Go to **Alerting → Notification policies**
+2. Click the ⋮ on the **Default policy**
+3. Click **Edit**
+4. Set **Default contact point** to `email-alerts`
+5. Click **Update default policy**
+
+#### Step 3 — Create Alert Rules
+Go to **Alerting → Alert rules → + New alert rule**
+
+**Alert 1 — High CPU Usage:**
+- Name: `High CPU Usage`
+- Query: `sum(rate(container_cpu_usage_seconds_total{namespace="foreseesnetwork"}[5m])) by (pod) > 0.8`
+- Condition: IS ABOVE `0.8`
+- Evaluate every: `1m`, For: `2m`
+- Labels: `severity=warning`
+- Summary: `Pod {{ $labels.pod }} CPU usage is high`
+
+**Alert 2 — Pod Restarted:**
+- Name: `Pod Restarted`
+- Query: `increase(kube_pod_container_status_restarts_total{namespace="foreseesnetwork"}[1h]) > 0`
+- Condition: IS ABOVE `0`
+- Evaluate every: `1m`, For: `0m`
+- Summary: `Pod {{ $labels.pod }} has restarted`
+
+**Alert 3 — High Memory Usage:**
+- Name: `High Memory Usage`
+- Query: `sum(container_memory_usage_bytes{namespace="foreseesnetwork"}) by (pod) > 400000000`
+- Condition: IS ABOVE `400000000` (400MB)
+- Evaluate every: `1m`, For: `2m`
+- Summary: `Pod {{ $labels.pod }} memory usage is high`
+
+#### Step 4 — Test Alerts
+```bash
+# Simulate pod crash → triggers Pod Restarted alert
+kubectl delete pod -l app=server -n foreseesnetwork
+```
+
+---
+
+### Alert States
+
+| State | Meaning |
+|---|---|
+| 🟢 Normal | Everything healthy |
+| 🟡 Pending | Threshold breached, waiting to confirm |
+| 🔴 Firing | Alert active, email sent |
+| ✅ Resolved | Problem fixed, recovery email sent |
+
+---
 
 ### Monitoring Stack
 
@@ -585,23 +679,6 @@ kubectl get secret monitoring-grafana -n monitoring \
 | Node Exporter | Host machine metrics | monitoring |
 | kube-state-metrics | Kubernetes object metrics | monitoring |
 
-### Alert Rules
-
-| Alert | Condition | Notification |
-|---|---|---|
-| High CPU Usage | CPU > 80% | Email |
-| Pod Restarted | Restart count > 0 | Email |
-| High Memory Usage | Memory > 400MB | Email |
-
-### Alert States
-
-| State | Meaning |
-|---|---|
-| 🟢 Normal | Everything healthy |
-| 🟡 Pending | Threshold breached, waiting to confirm |
-| 🔴 Firing | Alert active, email sent |
-| ✅ Resolved | Problem fixed, recovery email sent |
-
 ### Useful Dashboards
 | Dashboard | Shows |
 |---|---|
@@ -609,13 +686,7 @@ kubectl get secret monitoring-grafana -n monitoring \
 | Kubernetes / Compute Resources / Namespace (Workloads) | Per deployment |
 | Node Exporter / Nodes | Host machine health |
 
-### Test Alerts
-```bash
-# Simulate pod crash → triggers Pod Restarted alert
-kubectl delete pod -l app=server -n foreseesnetwork
-```
-
-### Reinstall Grafana (if needed)
+### Reinstall Monitoring (if needed after minikube delete)
 ```bash
 helm uninstall monitoring -n monitoring
 kubectl delete namespace monitoring
@@ -638,7 +709,6 @@ kubectl top pods -n foreseesnetwork
 
 # ── Port Forwards ──
 kubectl port-forward svc/client-service 5173:80 -n foreseesnetwork &
-kubectl port-forward svc/server-service 4000:4000 -n foreseesnetwork &
 kubectl port-forward svc/monitoring-grafana 3000:80 -n monitoring &
 pkill -f "kubectl port-forward"  # kill all port-forwards
 
@@ -654,20 +724,15 @@ kubectl exec -it deployment/postgres -n foreseesnetwork \
 kubectl exec -it deployment/postgres -n foreseesnetwork \
   -- psql -U postgres -d foreseesnetwork -c "SELECT * FROM users;"
 
-# View groups
-kubectl exec -it deployment/postgres -n foreseesnetwork \
-  -- psql -U postgres -d foreseesnetwork -c "SELECT * FROM groups;"
-
-# Add ALL new columns to existing DB (run once if upgrading)
+# Add all new columns to existing DB (run once if upgrading)
 kubectl exec -it deployment/postgres -n foreseesnetwork -- psql -U postgres -d foreseesnetwork -c "
 CREATE TABLE IF NOT EXISTS groups (id SERIAL PRIMARY KEY, name VARCHAR(100) NOT NULL, created_by VARCHAR(22) NOT NULL, avatar VARCHAR(5), created_at TIMESTAMP DEFAULT NOW());
 CREATE TABLE IF NOT EXISTS group_members (group_id INTEGER REFERENCES groups(id) ON DELETE CASCADE, username VARCHAR(22) NOT NULL, role VARCHAR(10) DEFAULT 'member', joined_at TIMESTAMP DEFAULT NOW(), PRIMARY KEY (group_id, username));
-CREATE TABLE IF NOT EXISTS group_messages (id SERIAL PRIMARY KEY, group_id INTEGER REFERENCES groups(id) ON DELETE CASCADE, from_user VARCHAR(22) NOT NULL, text TEXT NOT NULL, time VARCHAR(10), created_at TIMESTAMP DEFAULT NOW(), status VARCHAR(10) DEFAULT 'sent', reactions JSONB DEFAULT '{}', edited BOOLEAN DEFAULT FALSE, deleted BOOLEAN DEFAULT FALSE);
+CREATE TABLE IF NOT EXISTS group_messages (id SERIAL PRIMARY KEY, group_id INTEGER REFERENCES groups(id) ON DELETE CASCADE, from_user VARCHAR(22) NOT NULL, text TEXT NOT NULL, time VARCHAR(10), created_at TIMESTAMP DEFAULT NOW(), status VARCHAR(10) DEFAULT 'sent', reactions JSONB DEFAULT '{}', edited BOOLEAN DEFAULT FALSE, deleted BOOLEAN DEFAULT FALSE, reply_to JSONB DEFAULT NULL);
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS reactions JSONB DEFAULT '{}';
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS edited BOOLEAN DEFAULT FALSE;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS deleted BOOLEAN DEFAULT FALSE;
-CREATE INDEX IF NOT EXISTS idx_group_messages_group ON group_messages(group_id);
-CREATE INDEX IF NOT EXISTS idx_group_members_user ON group_members(username);
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to JSONB DEFAULT NULL;
 "
 
 # ── Minikube ──
@@ -681,6 +746,7 @@ minikube delete           # wipe everything (data lost!)
 git commit --allow-empty -m "ci: retrigger" && git push
 git commit -m "message [skip ci]"
 ```
+
 
 ---
 
