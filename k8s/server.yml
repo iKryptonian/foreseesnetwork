@@ -29,7 +29,8 @@ spec:
               cpu: 500m
               memory: 512Mi
           ports:
-            - containerPort: 4000
+            - name: http
+              containerPort: 4000
           envFrom:
             - configMapRef:
                 name: fn-config
@@ -65,5 +66,6 @@ spec:
   selector:
     app: server
   ports:
-    - port: 4000
+    - name: http
+      port: 4000
       targetPort: 4000
