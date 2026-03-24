@@ -8,6 +8,7 @@ const { Server } = require("socket.io");
 const pool = require("./db");
 const redis = require("./redis");
 const { sendOtpEmail, sendPasswordResetEmail } = require("./mailer");
+const client = require('prom-client');
 require("dotenv").config();
 
 const app = express();
@@ -20,6 +21,15 @@ const io = new Server(server, {
 
 app.use(cors());
 app.use(express.json());
+
+// ── PROMETHEUS METRICS ── 
+const collectDefaultMetrics = client.collectDefaultMetrics;
+collectDefaultMetrics({ prefix: 'foreseesnetwork_' });
+
+app.get('/metrics', async (req, res) => {
+  res.set('Content-Type', client.register.contentType);
+  res.end(await client.register.metrics());
+});
 
 // ── USERNAME → SOCKET ID MAP ──
 const userSocketMap = {};
