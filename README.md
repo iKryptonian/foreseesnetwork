@@ -1,4 +1,4 @@
-# ForeseesNetwork — Cloud-Native Real-Time Chat Platform
+# ForeseesNetwork — Kubernetes-Orchestrated Cloud-Native App with CI/CD and Observability(Real-Time Chat App)
 
 A production-grade real-time chat application built with a complete DevOps pipeline — containerized, orchestrated, auto-scaled, continuously deployed, and monitored.
 
