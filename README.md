@@ -546,6 +546,18 @@ cd ~/actions-runner && ./run.sh
 
 ## 📊 Monitoring — Prometheus + Grafana
 
+### Monitoring Stack
+
+| Component | Purpose | Namespace |
+|---|---|---|
+| Prometheus | Scrapes metrics every 15s | monitoring |
+| Grafana | Dashboards + email alerts | monitoring |
+| AlertManager | Routes alerts to contact points | monitoring |
+| Node Exporter | Host machine metrics | monitoring |
+| kube-state-metrics | Kubernetes object metrics | monitoring |
+
+---
+
 ### First Time Setup (after fresh Minikube or minikube delete)
 
 **Step 1 — Add Helm repo:**
@@ -559,27 +571,54 @@ helm repo update
 kubectl create namespace monitoring
 ```
 
-**Step 3 — Create Gmail SMTP secret:**
+**Step 3 — Create secrets (SMTP + admin password):**
 ```bash
-kubectl create secret generic grafana-smtp-secret \
+kubectl create secret generic grafana-secrets \
+  --from-literal=admin-password=YourPermanentPassword123 \
   --from-literal=smtp-password=YOUR_GMAIL_APP_PASSWORD \
   -n monitoring
 ```
-> Your Gmail app password is in `k8s/secrets.yml` as `EMAIL_PASS`
+> Gmail app password = the 16-char app password from myaccount.google.com/security
 
-**Step 4 — Install full monitoring stack:**
+**Step 4 — Make sure grafana-values.yml looks like this:**
+```yaml
+grafana:
+  adminPassword: "YourPermanentPassword123"
+  assertNoLeakedSecrets: false
+  grafana.ini:
+    smtp:
+      enabled: true
+      host: smtp.gmail.com:587
+      user: your@gmail.com
+      password: your-16-char-app-password
+      from_address: your@gmail.com
+      from_name: ForeseesNetwork Alerts
+      startTLS_policy: MandatoryStartTLS
+    analytics:
+      check_for_updates: true
+    log:
+      mode: console
+    paths:
+      data: /var/lib/grafana/
+      logs: /var/log/grafana
+      plugins: /var/lib/grafana/plugins
+      provisioning: /etc/grafana/provisioning
+```
+> `assertNoLeakedSecrets: false` is required — newer chart versions block plain text passwords without it
+
+**Step 5 — Install full monitoring stack:**
 ```bash
 helm install monitoring prometheus-community/kube-prometheus-stack \
   --namespace monitoring --create-namespace \
   -f ~/livechat/grafana-values.yml
 ```
 
-**Step 5 — Wait for all pods:**
+**Step 6 — Wait for all pods to be Running:**
 ```bash
 kubectl get pods -n monitoring -w
 ```
 
-All 6 pods should show `Running`:
+All pods should show `Running`:
 ```
 alertmanager-monitoring-kube-prometheus-alertmanager-0   2/2 Running
 monitoring-grafana-xxx                                   3/3 Running
@@ -589,72 +628,121 @@ monitoring-prometheus-node-exporter-xxx                  1/1 Running
 prometheus-monitoring-kube-prometheus-prometheus-0       2/2 Running
 ```
 
-**Step 6 — Access Grafana:**
+**Step 7 — Access Grafana:**
 ```bash
 kubectl port-forward svc/monitoring-grafana 3000:80 -n monitoring
 ```
 Open: **http://localhost:3000**
+Login: username `admin`, password `YourPermanentPassword123`
 
-**Get admin password:**
+> If you forgot the password or it changed after upgrade:
+> ```bash
+> kubectl get secret monitoring-grafana -n monitoring \
+>   -o jsonpath='{.data.admin-password}' | base64 -d
+> ```
+
+---
+
+### If You Already Have Monitoring Installed (upgrade)
+
+If monitoring is already installed and you changed `grafana-values.yml`:
 ```bash
-kubectl get secret monitoring-grafana -n monitoring \
-  -o jsonpath='{.data.admin-password}' | base64 -d
+helm upgrade monitoring prometheus-community/kube-prometheus-stack \
+  --namespace monitoring \
+  -f ~/livechat/grafana-values.yml
 ```
-Login: username `admin`, password from above command.
+
+If secret already exists and you need to recreate it:
+```bash
+kubectl delete secret grafana-secrets -n monitoring
+kubectl create secret generic grafana-secrets \
+  --from-literal=admin-password=YourPermanentPassword123 \
+  --from-literal=smtp-password=YOUR_GMAIL_APP_PASSWORD \
+  -n monitoring
+```
 
 ---
 
 ### Setting Up Email Alerts in Grafana
 
-After logging into Grafana at http://localhost:3000:
+After logging into **http://localhost:3000**:
 
-#### Step 1 — Create a Contact Point (where alerts get sent)
+#### Step 1 — Create Contact Point
 1. Go to **Alerting → Contact points**
 2. Click **+ Add contact point**
 3. Fill in:
    - **Name:** `email-alerts`
    - **Integration:** Email
-   - **Addresses:** your email address
-4. Click **Test** to verify email arrives
+   - **Addresses:** your@gmail.com
+4. Click **Test** → verify email arrives in inbox
 5. Click **Save contact point**
 
-#### Step 2 — Set Default Contact Point
+#### Step 2 — Set Default Notification Policy
 1. Go to **Alerting → Notification policies**
-2. Click the ⋮ on the **Default policy**
-3. Click **Edit**
-4. Set **Default contact point** to `email-alerts`
-5. Click **Update default policy**
+2. Click **⋮ → Edit** on the Default policy
+3. Set **Default contact point** → `email-alerts`
+4. Click **Update default policy**
 
 #### Step 3 — Create Alert Rules
-Go to **Alerting → Alert rules → + New alert rule**
 
-**Alert 1 — High CPU Usage:**
-- Name: `High CPU Usage`
-- Query: `sum(rate(container_cpu_usage_seconds_total{namespace="foreseesnetwork"}[5m])) by (pod) > 0.8`
-- Condition: IS ABOVE `0.8`
-- Evaluate every: `1m`, For: `2m`
-- Labels: `severity=warning`
-- Summary: `Pod {{ $labels.pod }} CPU usage is high`
+Go to **Alerting → Alert rules → + New alert rule** for each alert below.
 
-**Alert 2 — Pod Restarted:**
-- Name: `Pod Restarted`
-- Query: `increase(kube_pod_container_status_restarts_total{namespace="foreseesnetwork"}[1h]) > 0`
-- Condition: IS ABOVE `0`
-- Evaluate every: `1m`, For: `0m`
-- Summary: `Pod {{ $labels.pod }} has restarted`
+For all 3 alerts use these common settings:
+- **Section 3 Folder:** `foreseesnetwork` (create new if first time)
+- **Section 4 Evaluation group:** `foreseesnetwork-alerts` (create new if first time, interval `1m`)
+- **Section 5 Contact point:** `email-alerts`
+
+---
+
+**Alert 1 — Pod Restarted:**
+
+| Field | Value |
+|---|---|
+| Name | `Pod Restarted` |
+| Datasource | Prometheus |
+| Query | `increase(kube_pod_container_status_restarts_total{namespace="foreseesnetwork"}[1h])` |
+| Condition | IS ABOVE `0` |
+| Pending period | `None` (fires immediately) |
+| Summary | `Pod {{ $labels.pod }} has restarted in foreseesnetwork` |
+| Description | `A pod in the foreseesnetwork namespace has restarted. Check logs immediately.` |
+
+---
+
+**Alert 2 — High CPU Usage:**
+
+| Field | Value |
+|---|---|
+| Name | `High CPU Usage` |
+| Datasource | Prometheus |
+| Query | `sum(rate(container_cpu_usage_seconds_total{namespace="foreseesnetwork"}[5m])) by (pod)` |
+| Condition | IS ABOVE `0.8` |
+| Pending period | `2m` |
+| Summary | `Pod {{ $labels.pod }} CPU usage is above 80%` |
+| Description | `CPU usage has been above 80% for 2 minutes in foreseesnetwork. Consider scaling up.` |
+
+---
 
 **Alert 3 — High Memory Usage:**
-- Name: `High Memory Usage`
-- Query: `sum(container_memory_usage_bytes{namespace="foreseesnetwork"}) by (pod) > 400000000`
-- Condition: IS ABOVE `400000000` (400MB)
-- Evaluate every: `1m`, For: `2m`
-- Summary: `Pod {{ $labels.pod }} memory usage is high`
+
+| Field | Value |
+|---|---|
+| Name | `High Memory Usage` |
+| Datasource | Prometheus |
+| Query | `sum(container_memory_usage_bytes{namespace="foreseesnetwork"}) by (pod)` |
+| Condition | IS ABOVE `400000000` |
+| Pending period | `2m` |
+| Summary | `Pod {{ $labels.pod }} memory usage is above 400MB` |
+| Description | `Memory usage has been above 400MB for 2 minutes in foreseesnetwork. Consider increasing memory limits.` |
+
+---
 
 #### Step 4 — Test Alerts
 ```bash
-# Simulate pod crash → triggers Pod Restarted alert
+# Crash a pod → triggers Pod Restarted alert → email arrives in ~1 min
 kubectl delete pod -l app=server -n foreseesnetwork
 ```
+
+Check **Alerting → Alert rules** — Pod Restarted turns 🔴 Firing → email arrives in Gmail.
 
 ---
 
@@ -669,16 +757,6 @@ kubectl delete pod -l app=server -n foreseesnetwork
 
 ---
 
-### Monitoring Stack
-
-| Component | Purpose | Namespace |
-|---|---|---|
-| Prometheus | Scrapes metrics every 15s | monitoring |
-| Grafana | Dashboards + email alerts | monitoring |
-| AlertManager | Routes alerts to contact points | monitoring |
-| Node Exporter | Host machine metrics | monitoring |
-| kube-state-metrics | Kubernetes object metrics | monitoring |
-
 ### Useful Dashboards
 | Dashboard | Shows |
 |---|---|
@@ -686,11 +764,14 @@ kubectl delete pod -l app=server -n foreseesnetwork
 | Kubernetes / Compute Resources / Namespace (Workloads) | Per deployment |
 | Node Exporter / Nodes | Host machine health |
 
+---
+
 ### Reinstall Monitoring (if needed after minikube delete)
 ```bash
 helm uninstall monitoring -n monitoring
 kubectl delete namespace monitoring
-# Then follow First Time Setup steps above
+kubectl delete secret grafana-secrets -n monitoring
+# Then follow First Time Setup steps above from Step 1
 ```
 
 ---
@@ -746,7 +827,6 @@ minikube delete           # wipe everything (data lost!)
 git commit --allow-empty -m "ci: retrigger" && git push
 git commit -m "message [skip ci]"
 ```
-
 
 ---
 

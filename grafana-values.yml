@@ -1,6 +1,5 @@
 grafana:
   adminPassword: "grafanaadmin"
-  assertNoLeakedSecrets: false
   grafana.ini:
     smtp:
       enabled: true
